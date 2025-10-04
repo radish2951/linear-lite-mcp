@@ -31,7 +31,7 @@ Search issues with minimal payload. Returns only essential fields:
 ### `issue_get_detail`
 Get full issue details including:
 - All fields from lean search
-- `description`, `labels`, `assigneeName`, `creatorName`, `createdAt`
+- `description`, `labels`, `assigneeName`, `creatorName`, `createdAt`, `updatedAt`
 
 **Parameters**:
 - `identifier` (required): Issue identifier (e.g., "JHS-1")

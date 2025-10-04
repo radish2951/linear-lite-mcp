@@ -2,10 +2,6 @@
  * Lightweight Linear GraphQL client
  */
 
-export interface LinearConfig {
-	apiKey: string;
-}
-
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 
 /**
@@ -42,18 +38,24 @@ async function executeQuery<T>(
 }
 
 /**
- * Lean issue search - minimal payload
+ * Issue type
  */
-export interface IssueLean {
+export interface Issue {
 	identifier: string;
 	title: string;
 	state: string;
 	priority: number;
 	projectName: string | null;
 	dueDate: string | null;
+	description?: string | null;
+	labels?: string[];
+	assigneeName?: string | null;
+	createdAt?: string;
+	updatedAt?: string;
+	creatorName?: string | null;
 }
 
-export async function searchIssuesLean(
+export async function searchIssues(
 	apiKey: string,
 	query?: string,
 	filter?: {
@@ -64,7 +66,7 @@ export async function searchIssuesLean(
 		includeCompleted?: boolean;
 	},
 	first = 25,
-): Promise<IssueLean[]> {
+): Promise<Issue[]> {
 	// Build filter object
 	const filterObj: Record<string, unknown> = {};
 	if (filter?.teamId) filterObj.team = { id: { eq: filter.teamId } };
@@ -89,7 +91,7 @@ export async function searchIssuesLean(
 	}
 
 	const graphqlQuery = `
-    query SearchIssuesLean($filter: IssueFilter, $first: Int) {
+    query SearchIssues($filter: IssueFilter, $first: Int) {
       issues(filter: $filter, first: $first) {
         nodes {
           identifier
@@ -129,15 +131,7 @@ export async function searchIssuesLean(
 /**
  * Get full issue details
  */
-export interface IssueDetail extends IssueLean {
-	description: string | null;
-	labels: string[];
-	assigneeName: string | null;
-	createdAt: string;
-	creatorName: string | null;
-}
-
-export async function getIssue(apiKey: string, identifier: string): Promise<IssueDetail> {
+export async function getIssue(apiKey: string, identifier: string): Promise<Issue> {
 	const query = `
     query GetIssue($id: String!) {
       issue(id: $id) {
@@ -152,6 +146,7 @@ export async function getIssue(apiKey: string, identifier: string): Promise<Issu
         project { name }
         dueDate
         createdAt
+        updatedAt
       }
     }
   `;
@@ -169,21 +164,23 @@ export async function getIssue(apiKey: string, identifier: string): Promise<Issu
 			project: { name: string } | null;
 			dueDate: string | null;
 			createdAt: string;
+			updatedAt: string;
 		};
 	}>(query, { id: identifier }, apiKey);
 
 	return {
 		identifier: data.issue.identifier,
 		title: data.issue.title,
-		description: data.issue.description,
 		state: data.issue.state.name,
 		priority: data.issue.priority,
 		projectName: data.issue.project?.name || null,
 		dueDate: data.issue.dueDate,
-		assigneeName: data.issue.assignee?.name || null,
-		creatorName: data.issue.creator?.name || null,
+		description: data.issue.description,
 		labels: data.issue.labels.nodes.map((l) => l.name),
+		assigneeName: data.issue.assignee?.name || null,
 		createdAt: data.issue.createdAt,
+		updatedAt: data.issue.updatedAt,
+		creatorName: data.issue.creator?.name || null,
 	};
 }
 
@@ -209,15 +206,7 @@ export async function listTeams(apiKey: string): Promise<Team[]> {
     }
   `;
 
-	const data = await executeQuery<{
-		teams: {
-			nodes: Array<{
-				id: string;
-				name: string;
-				key: string;
-			}>;
-		};
-	}>(query, {}, apiKey);
+	const data = await executeQuery<{ teams: { nodes: Team[] } }>(query, {}, apiKey);
 
 	return data.teams.nodes;
 }
@@ -225,13 +214,13 @@ export async function listTeams(apiKey: string): Promise<Team[]> {
 /**
  * List workflow states for a team
  */
-export interface WorkflowState {
+export interface State {
 	id: string;
 	name: string;
 	type: string;
 }
 
-export async function listStates(apiKey: string, teamId: string): Promise<WorkflowState[]> {
+export async function listStates(apiKey: string, teamId: string): Promise<State[]> {
 	const query = `
     query ListStates($teamId: String!) {
       team(id: $teamId) {
@@ -246,17 +235,11 @@ export async function listStates(apiKey: string, teamId: string): Promise<Workfl
     }
   `;
 
-	const data = await executeQuery<{
-		team: {
-			states: {
-				nodes: Array<{
-					id: string;
-					name: string;
-					type: string;
-				}>;
-			};
-		};
-	}>(query, { teamId }, apiKey);
+	const data = await executeQuery<{ team: { states: { nodes: State[] } } }>(
+		query,
+		{ teamId },
+		apiKey,
+	);
 
 	return data.team.states.nodes;
 }
@@ -432,15 +415,7 @@ export async function listUsers(apiKey: string): Promise<User[]> {
     }
   `;
 
-	const data = await executeQuery<{
-		users: {
-			nodes: Array<{
-				id: string;
-				name: string;
-				active: boolean;
-			}>;
-		};
-	}>(query, {}, apiKey);
+	const data = await executeQuery<{ users: { nodes: User[] } }>(query, {}, apiKey);
 
 	return data.users.nodes;
 }
@@ -469,15 +444,11 @@ export async function listLabels(apiKey: string, teamId?: string): Promise<Label
 
 	const filter = teamId ? { team: { id: { eq: teamId } } } : {};
 
-	const data = await executeQuery<{
-		issueLabels: {
-			nodes: Array<{
-				id: string;
-				name: string;
-				color: string;
-			}>;
-		};
-	}>(query, { filter }, apiKey);
+	const data = await executeQuery<{ issueLabels: { nodes: Label[] } }>(
+		query,
+		{ filter },
+		apiKey,
+	);
 
 	return data.issueLabels.nodes;
 }
@@ -512,17 +483,11 @@ export async function listProjects(
       }
     `;
 
-		const data = await executeQuery<{
-			team: {
-				projects: {
-					nodes: Array<{
-						id: string;
-						name: string;
-						state: string;
-					}>;
-				};
-			};
-		}>(query, { teamId }, apiKey);
+		const data = await executeQuery<{ team: { projects: { nodes: Project[] } } }>(
+			query,
+			{ teamId },
+			apiKey,
+		);
 
 		const projects = data.team.projects.nodes;
 		return includeCompleted
@@ -547,15 +512,7 @@ export async function listProjects(
 			filter.state = { nin: ["completed", "canceled"] };
 		}
 
-		const data = await executeQuery<{
-			projects: {
-				nodes: Array<{
-					id: string;
-					name: string;
-					state: string;
-				}>;
-			};
-		}>(query, { filter }, apiKey);
+		const data = await executeQuery<{ projects: { nodes: Project[] } }>(query, { filter }, apiKey);
 
 		return data.projects.nodes;
 	}

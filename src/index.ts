@@ -2,7 +2,7 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-	searchIssuesLean,
+	searchIssues,
 	getIssue,
 	createIssueByName,
 	getWorkspaceOverview,
@@ -83,7 +83,7 @@ export class MyMCP extends McpAgent<Env> {
 						assigneeId = user.id;
 					}
 
-					const issues = await searchIssuesLean(
+					const issues = await searchIssues(
 						apiKey,
 						query,
 						{ teamId, assigneeId, state, priority, includeCompleted },
