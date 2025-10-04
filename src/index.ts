@@ -1,54 +1,85 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { searchIssuesLean, getIssue } from "./linear";
 
-// Define our MCP agent with tools
-export class MyMCP extends McpAgent {
+// Define our Linear MCP agent
+export class MyMCP extends McpAgent<Env> {
 	server = new McpServer({
-		name: "Authless Calculator",
-		version: "1.0.0",
+		name: "Linear Lite MCP",
+		version: "0.1.0",
 	});
 
 	async init() {
-		// Simple addition tool
-		this.server.tool("add", { a: z.number(), b: z.number() }, async ({ a, b }) => ({
-			content: [{ type: "text", text: String(a + b) }],
-		}));
-
-		// Calculator tool with multiple operations
+		// Search issues with minimal payload
 		this.server.tool(
-			"calculate",
+			"issues_search_lean",
 			{
-				operation: z.enum(["add", "subtract", "multiply", "divide"]),
-				a: z.number(),
-				b: z.number(),
+				teamId: z.string().optional(),
+				assigneeId: z.string().optional(),
+				state: z.string().optional(),
+				priority: z.number().min(0).max(4).optional(),
+				limit: z.number().min(1).max(100).default(25),
 			},
-			async ({ operation, a, b }) => {
-				let result: number;
-				switch (operation) {
-					case "add":
-						result = a + b;
-						break;
-					case "subtract":
-						result = a - b;
-						break;
-					case "multiply":
-						result = a * b;
-						break;
-					case "divide":
-						if (b === 0)
-							return {
-								content: [
-									{
-										type: "text",
-										text: "Error: Cannot divide by zero",
-									},
-								],
-							};
-						result = a / b;
-						break;
+			async ({ teamId, assigneeId, state, priority, limit }) => {
+				const apiKey = this.env.LINEAR_API_KEY;
+				if (!apiKey) {
+					return {
+						content: [{ type: "text", text: "Error: LINEAR_API_KEY not configured" }],
+					};
 				}
-				return { content: [{ type: "text", text: String(result) }] };
+
+				try {
+					const issues = await searchIssuesLean(
+						apiKey,
+						{ teamId, assigneeId, state, priority },
+						limit,
+					);
+					return {
+						content: [{ type: "text", text: JSON.stringify(issues, null, 2) }],
+					};
+				} catch (error) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+							},
+						],
+					};
+				}
+			},
+		);
+
+		// Get full issue details
+		this.server.tool(
+			"issues_get",
+			{
+				issueId: z.string(),
+			},
+			async ({ issueId }) => {
+				const apiKey = this.env.LINEAR_API_KEY;
+				if (!apiKey) {
+					return {
+						content: [{ type: "text", text: "Error: LINEAR_API_KEY not configured" }],
+					};
+				}
+
+				try {
+					const issue = await getIssue(apiKey, issueId);
+					return {
+						content: [{ type: "text", text: JSON.stringify(issue, null, 2) }],
+					};
+				} catch (error) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+							},
+						],
+					};
+				}
 			},
 		);
 	}
