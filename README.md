@@ -11,7 +11,9 @@ A **lightweight** Linear MCP server on Cloudflare Workers. This implementation u
 
 ## Available Tools
 
-### `issues_search_lean`
+> **Note**: Tool inputs accept human-readable names instead of IDs. The server resolves them to Linear IDs at runtime, so duplicate team/user/label names may lead to ambiguous matches—keep names unique for reliable results.
+
+### `issues_search`
 Search issues with minimal payload. Returns only essential fields:
 - `identifier`, `title`, `state`, `priority`
 - `projectName` (flattened)
@@ -19,19 +21,41 @@ Search issues with minimal payload. Returns only essential fields:
 
 **Parameters**:
 - `query` (optional): Freetext search across title and description
-- `teamId` (optional): Filter by team
-- `assigneeId` (optional): Filter by assignee
+- `teamName` (optional): Filter by team name (resolved to ID server-side)
+- `assigneeName` (optional): Filter by assignee name (resolved to ID server-side)
 - `state` (optional): Filter by state name
 - `priority` (optional): Filter by priority (0-4)
 - `limit` (optional): Number of results (1-100, default: 25)
+- `includeCompleted` (optional): Include completed/canceled issues when `true`
 
-### `issues_get`
+### `issue_get_detail`
 Get full issue details including:
 - All fields from lean search
-- `description`, `labels`, `assigneeName`, `creator`, `createdAt`
+- `description`, `labels`, `assigneeName`, `creatorName`, `createdAt`
 
 **Parameters**:
 - `identifier` (required): Issue identifier (e.g., "JHS-1")
+
+### `workspace_overview`
+Fetch workspace metadata in a single call. Returns:
+- Teams with keys, states, labels, and active projects
+- Workspace-level labels and initiatives
+- Active users (without IDs to keep payload small)
+
+**Parameters**: _None_
+
+### `issues_create`
+Create a new issue by human-friendly names. Resolves names to IDs internally before calling Linear.
+
+**Parameters**:
+- `teamName` (required): Team to create the issue in
+- `title` (required): Issue title
+- `description` (optional): Issue description
+- `priority` (optional): Priority (0-4)
+- `assigneeName` (optional): Assign by user display name
+- `labelNames` (optional): Array of label names (team or workspace labels)
+- `projectName` (optional): Associate with a project
+- `stateName` (optional): Set initial workflow state
 
 ## Setup
 
@@ -96,11 +120,27 @@ npm run deploy
 }
 ```
 
+### Create an issue
+```json
+{
+  "teamName": "Product",
+  "title": "API モニタリングを追加",
+  "assigneeName": "Daiki",
+  "labelNames": ["Backend"],
+  "priority": 2
+}
+```
+
 ### Get issue details
 ```json
 {
   "identifier": "JHS-1"
 }
+```
+
+### Fetch workspace overview
+```json
+{}
 ```
 
 ## Connect to Claude Desktop
@@ -147,7 +187,7 @@ Result: **~70% smaller payloads** for list operations.
 
 ## Future Enhancements
 
-- [ ] Issue creation and updates
+- [ ] Issue updates
 - [ ] Comment management
 - [ ] Project and Initiative search
 - [ ] Webhook support for real-time updates

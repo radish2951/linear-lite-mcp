@@ -39,7 +39,7 @@ export class MyMCP extends McpAgent<Env> {
 	async init() {
 		// Search issues with minimal payload
 		this.server.tool(
-			"issues_search_lean",
+			"issues_search",
 			{
 				query: z.string().optional(),
 				teamName: z.string().optional(),
@@ -49,7 +49,15 @@ export class MyMCP extends McpAgent<Env> {
 				limit: z.number().min(1).max(100).default(25),
 				includeCompleted: z.boolean().optional(),
 			},
-			async ({ query, teamName, assigneeName, state, priority, limit, includeCompleted }) => {
+			async ({
+				query,
+				teamName,
+				assigneeName,
+				state,
+				priority,
+				limit,
+				includeCompleted,
+			}) => {
 				try {
 					const apiKey = this.getApiKey();
 
@@ -92,7 +100,7 @@ export class MyMCP extends McpAgent<Env> {
 
 		// Get full issue details
 		this.server.tool(
-			"issues_get",
+			"issue_get_detail",
 			{
 				identifier: z.string(),
 			},
@@ -124,7 +132,9 @@ export class MyMCP extends McpAgent<Env> {
 				};
 
 				return {
-					content: [{ type: "text", text: JSON.stringify(cleanedOverview, null, 2) }],
+					content: [
+						{ type: "text", text: JSON.stringify(cleanedOverview, null, 2) },
+					],
 				};
 			} catch (error) {
 				return this.handleError(error);
@@ -144,7 +154,16 @@ export class MyMCP extends McpAgent<Env> {
 				projectName: z.string().optional(),
 				stateName: z.string().optional(),
 			},
-			async ({ teamName, title, description, priority, assigneeName, labelNames, projectName, stateName }) => {
+			async ({
+				teamName,
+				title,
+				description,
+				priority,
+				assigneeName,
+				labelNames,
+				projectName,
+				stateName,
+			}) => {
 				try {
 					const apiKey = this.getApiKey();
 					const result = await createIssueByName(apiKey, {
@@ -171,7 +190,9 @@ export class MyMCP extends McpAgent<Env> {
 					};
 
 					return {
-						content: [{ type: "text", text: JSON.stringify(cleanedResult, null, 2) }],
+						content: [
+							{ type: "text", text: JSON.stringify(cleanedResult, null, 2) },
+						],
 					};
 				} catch (error) {
 					return this.handleError(error);
