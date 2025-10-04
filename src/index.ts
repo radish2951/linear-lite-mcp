@@ -1,7 +1,15 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { searchIssuesLean, getIssue } from "./linear";
+import {
+	searchIssuesLean,
+	getIssue,
+	listTeams,
+	createIssue,
+	listUsers,
+	listLabels,
+	listProjects,
+} from "./linear";
 
 // Define our Linear MCP agent
 export class MyMCP extends McpAgent<Env> {
@@ -9,6 +17,25 @@ export class MyMCP extends McpAgent<Env> {
 		name: "Linear Lite MCP",
 		version: "0.1.0",
 	});
+
+	private getApiKey() {
+		const apiKey = this.env.LINEAR_API_KEY;
+		if (!apiKey) {
+			throw new Error("LINEAR_API_KEY not configured");
+		}
+		return apiKey;
+	}
+
+	private handleError(error: unknown) {
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `Error: ${error instanceof Error ? error.message : String(error)}`,
+				},
+			],
+		};
+	}
 
 	async init() {
 		// Search issues with minimal payload
@@ -23,14 +50,8 @@ export class MyMCP extends McpAgent<Env> {
 				limit: z.number().min(1).max(100).default(25),
 			},
 			async ({ query, teamId, assigneeId, state, priority, limit }) => {
-				const apiKey = this.env.LINEAR_API_KEY;
-				if (!apiKey) {
-					return {
-						content: [{ type: "text", text: "Error: LINEAR_API_KEY not configured" }],
-					};
-				}
-
 				try {
+					const apiKey = this.getApiKey();
 					const issues = await searchIssuesLean(
 						apiKey,
 						query,
@@ -41,14 +62,7 @@ export class MyMCP extends McpAgent<Env> {
 						content: [{ type: "text", text: JSON.stringify(issues, null, 2) }],
 					};
 				} catch (error) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-							},
-						],
-					};
+					return this.handleError(error);
 				}
 			},
 		);
@@ -60,27 +74,111 @@ export class MyMCP extends McpAgent<Env> {
 				identifier: z.string(),
 			},
 			async ({ identifier }) => {
-				const apiKey = this.env.LINEAR_API_KEY;
-				if (!apiKey) {
-					return {
-						content: [{ type: "text", text: "Error: LINEAR_API_KEY not configured" }],
-					};
-				}
-
 				try {
+					const apiKey = this.getApiKey();
 					const issue = await getIssue(apiKey, identifier);
 					return {
 						content: [{ type: "text", text: JSON.stringify(issue, null, 2) }],
 					};
 				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// List teams
+		this.server.tool("teams_list", {}, async () => {
+			try {
+				const apiKey = this.getApiKey();
+				const teams = await listTeams(apiKey);
+				return {
+					content: [{ type: "text", text: JSON.stringify(teams, null, 2) }],
+				};
+			} catch (error) {
+				return this.handleError(error);
+			}
+		});
+
+		// Create issue
+		this.server.tool(
+			"issues_create",
+			{
+				teamId: z.string(),
+				title: z.string(),
+				description: z.string().optional(),
+				priority: z.number().min(0).max(4).optional(),
+				assigneeId: z.string().optional(),
+				labelIds: z.array(z.string()).optional(),
+				projectId: z.string().optional(),
+			},
+			async ({ teamId, title, description, priority, assigneeId, labelIds, projectId }) => {
+				try {
+					const apiKey = this.getApiKey();
+					const result = await createIssue(apiKey, {
+						teamId,
+						title,
+						description,
+						priority,
+						assigneeId,
+						labelIds,
+						projectId,
+					});
 					return {
-						content: [
-							{
-								type: "text",
-								text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-							},
-						],
+						content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
 					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// List users
+		this.server.tool("users_list", {}, async () => {
+			try {
+				const apiKey = this.getApiKey();
+				const users = await listUsers(apiKey);
+				return {
+					content: [{ type: "text", text: JSON.stringify(users, null, 2) }],
+				};
+			} catch (error) {
+				return this.handleError(error);
+			}
+		});
+
+		// List labels
+		this.server.tool(
+			"labels_list",
+			{
+				teamId: z.string().optional(),
+			},
+			async ({ teamId }) => {
+				try {
+					const apiKey = this.getApiKey();
+					const labels = await listLabels(apiKey, teamId);
+					return {
+						content: [{ type: "text", text: JSON.stringify(labels, null, 2) }],
+					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// List projects
+		this.server.tool(
+			"projects_list",
+			{
+				teamId: z.string().optional(),
+			},
+			async ({ teamId }) => {
+				try {
+					const apiKey = this.getApiKey();
+					const projects = await listProjects(apiKey, teamId);
+					return {
+						content: [{ type: "text", text: JSON.stringify(projects, null, 2) }],
+					};
+				} catch (error) {
+					return this.handleError(error);
 				}
 			},
 		);
