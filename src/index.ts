@@ -4,11 +4,10 @@ import { z } from "zod";
 import {
 	searchIssuesLean,
 	getIssue,
+	createIssueByName,
+	getWorkspaceOverview,
 	listTeams,
-	createIssue,
 	listUsers,
-	listLabels,
-	listProjects,
 } from "./linear";
 
 // Define our Linear MCP agent
@@ -43,19 +42,43 @@ export class MyMCP extends McpAgent<Env> {
 			"issues_search_lean",
 			{
 				query: z.string().optional(),
-				teamId: z.string().optional(),
-				assigneeId: z.string().optional(),
+				teamName: z.string().optional(),
+				assigneeName: z.string().optional(),
 				state: z.string().optional(),
 				priority: z.number().min(0).max(4).optional(),
 				limit: z.number().min(1).max(100).default(25),
+				includeCompleted: z.boolean().optional(),
 			},
-			async ({ query, teamId, assigneeId, state, priority, limit }) => {
+			async ({ query, teamName, assigneeName, state, priority, limit, includeCompleted }) => {
 				try {
 					const apiKey = this.getApiKey();
+
+					// Resolve teamName to teamId if provided
+					let teamId: string | undefined;
+					if (teamName) {
+						const teams = await listTeams(apiKey);
+						const team = teams.find((t) => t.name === teamName);
+						if (!team) {
+							throw new Error(`Team not found: ${teamName}`);
+						}
+						teamId = team.id;
+					}
+
+					// Resolve assigneeName to assigneeId if provided
+					let assigneeId: string | undefined;
+					if (assigneeName) {
+						const users = await listUsers(apiKey);
+						const user = users.find((u) => u.name === assigneeName);
+						if (!user) {
+							throw new Error(`User not found: ${assigneeName}`);
+						}
+						assigneeId = user.id;
+					}
+
 					const issues = await searchIssuesLean(
 						apiKey,
 						query,
-						{ teamId, assigneeId, state, priority },
+						{ teamId, assigneeId, state, priority, includeCompleted },
 						limit,
 					);
 					return {
@@ -86,96 +109,69 @@ export class MyMCP extends McpAgent<Env> {
 			},
 		);
 
-		// List teams
-		this.server.tool("teams_list", {}, async () => {
+		// Get workspace overview - all teams, users, labels, states, and projects
+		this.server.tool("workspace_overview", {}, async () => {
 			try {
 				const apiKey = this.getApiKey();
-				const teams = await listTeams(apiKey);
+				const overview = await getWorkspaceOverview(apiKey);
+
+				// Remove IDs from the response
+				const cleanedOverview = {
+					teams: overview.teams.map(({ id, ...team }) => team),
+					workspaceLabels: overview.workspaceLabels,
+					initiatives: overview.initiatives,
+					users: overview.users.map(({ id, ...user }) => user),
+				};
+
 				return {
-					content: [{ type: "text", text: JSON.stringify(teams, null, 2) }],
+					content: [{ type: "text", text: JSON.stringify(cleanedOverview, null, 2) }],
 				};
 			} catch (error) {
 				return this.handleError(error);
 			}
 		});
 
-		// Create issue
+		// Create issue by name
 		this.server.tool(
 			"issues_create",
 			{
-				teamId: z.string(),
+				teamName: z.string(),
 				title: z.string(),
 				description: z.string().optional(),
 				priority: z.number().min(0).max(4).optional(),
-				assigneeId: z.string().optional(),
-				labelIds: z.array(z.string()).optional(),
-				projectId: z.string().optional(),
+				assigneeName: z.string().optional(),
+				labelNames: z.array(z.string()).optional(),
+				projectName: z.string().optional(),
+				stateName: z.string().optional(),
 			},
-			async ({ teamId, title, description, priority, assigneeId, labelIds, projectId }) => {
+			async ({ teamName, title, description, priority, assigneeName, labelNames, projectName, stateName }) => {
 				try {
 					const apiKey = this.getApiKey();
-					const result = await createIssue(apiKey, {
-						teamId,
+					const result = await createIssueByName(apiKey, {
+						teamName,
 						title,
 						description,
 						priority,
-						assigneeId,
-						labelIds,
-						projectId,
+						assigneeName,
+						labelNames,
+						projectName,
+						stateName,
 					});
-					return {
-						content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+
+					// Remove ID from the response
+					const cleanedResult = {
+						success: result.success,
+						issue: result.issue
+							? {
+									identifier: result.issue.identifier,
+									title: result.issue.title,
+									url: result.issue.url,
+								}
+							: undefined,
 					};
-				} catch (error) {
-					return this.handleError(error);
-				}
-			},
-		);
 
-		// List users
-		this.server.tool("users_list", {}, async () => {
-			try {
-				const apiKey = this.getApiKey();
-				const users = await listUsers(apiKey);
-				return {
-					content: [{ type: "text", text: JSON.stringify(users, null, 2) }],
-				};
-			} catch (error) {
-				return this.handleError(error);
-			}
-		});
-
-		// List labels
-		this.server.tool(
-			"labels_list",
-			{
-				teamId: z.string().optional(),
-			},
-			async ({ teamId }) => {
-				try {
-					const apiKey = this.getApiKey();
-					const labels = await listLabels(apiKey, teamId);
 					return {
-						content: [{ type: "text", text: JSON.stringify(labels, null, 2) }],
-					};
-				} catch (error) {
-					return this.handleError(error);
-				}
-			},
-		);
-
-		// List projects
-		this.server.tool(
-			"projects_list",
-			{
-				teamId: z.string().optional(),
-			},
-			async ({ teamId }) => {
-				try {
-					const apiKey = this.getApiKey();
-					const projects = await listProjects(apiKey, teamId);
-					return {
-						content: [{ type: "text", text: JSON.stringify(projects, null, 2) }],
+						content: [{ type: "text", text: JSON.stringify(cleanedResult, null, 2) }],
 					};
 				} catch (error) {
 					return this.handleError(error);

@@ -26,7 +26,10 @@ async function executeQuery<T>(
 	});
 
 	if (!response.ok) {
-		throw new Error(`Linear API error: ${response.status} ${response.statusText}`);
+		const errorText = await response.text();
+		throw new Error(
+			`Linear API error: ${response.status} ${response.statusText}\nResponse: ${errorText}`,
+		);
 	}
 
 	const json = (await response.json()) as { data: T; errors?: unknown[] };
@@ -58,6 +61,7 @@ export async function searchIssuesLean(
 		assigneeId?: string;
 		state?: string;
 		priority?: number;
+		includeCompleted?: boolean;
 	},
 	first = 25,
 ): Promise<IssueLean[]> {
@@ -67,6 +71,14 @@ export async function searchIssuesLean(
 	if (filter?.assigneeId) filterObj.assignee = { id: { eq: filter.assigneeId } };
 	if (filter?.state) filterObj.state = { name: { eq: filter.state } };
 	if (filter?.priority) filterObj.priority = { eq: filter.priority };
+
+	// Exclude completed and canceled by default
+	if (!filter?.includeCompleted) {
+		filterObj.state = {
+			...(typeof filterObj.state === "object" ? filterObj.state : {}),
+			type: { nin: ["completed", "canceled"] },
+		};
+	}
 
 	// Add text search to filter if query provided
 	if (query) {
@@ -211,7 +223,46 @@ export async function listTeams(apiKey: string): Promise<Team[]> {
 }
 
 /**
- * Create a new issue
+ * List workflow states for a team
+ */
+export interface WorkflowState {
+	id: string;
+	name: string;
+	type: string;
+}
+
+export async function listStates(apiKey: string, teamId: string): Promise<WorkflowState[]> {
+	const query = `
+    query ListStates($teamId: String!) {
+      team(id: $teamId) {
+        states {
+          nodes {
+            id
+            name
+            type
+          }
+        }
+      }
+    }
+  `;
+
+	const data = await executeQuery<{
+		team: {
+			states: {
+				nodes: Array<{
+					id: string;
+					name: string;
+					type: string;
+				}>;
+			};
+		};
+	}>(query, { teamId }, apiKey);
+
+	return data.team.states.nodes;
+}
+
+/**
+ * Create a new issue (internal - uses IDs)
  */
 export interface CreateIssueInput {
 	teamId: string;
@@ -221,6 +272,7 @@ export interface CreateIssueInput {
 	assigneeId?: string;
 	labelIds?: string[];
 	projectId?: string;
+	stateId?: string;
 }
 
 export interface CreateIssueResult {
@@ -267,12 +319,103 @@ export async function createIssue(
 }
 
 /**
+ * Create a new issue by name (user-friendly API)
+ */
+export interface CreateIssueByNameInput {
+	teamName: string;
+	title: string;
+	description?: string;
+	priority?: number;
+	assigneeName?: string;
+	labelNames?: string[];
+	projectName?: string;
+	stateName?: string;
+}
+
+export async function createIssueByName(
+	apiKey: string,
+	input: CreateIssueByNameInput,
+): Promise<CreateIssueResult> {
+	// 1. Resolve team name to ID
+	const teams = await listTeams(apiKey);
+	const team = teams.find((t) => t.name === input.teamName);
+	if (!team) {
+		throw new Error(`Team not found: ${input.teamName}`);
+	}
+	const teamId = team.id;
+
+	// 2. Resolve all names to IDs in parallel
+	const [users, states, teamLabels, workspaceLabels, projects] = await Promise.all([
+		input.assigneeName ? listUsers(apiKey) : Promise.resolve([]),
+		input.stateName ? listStates(apiKey, teamId) : Promise.resolve([]),
+		input.labelNames ? listLabels(apiKey, teamId) : Promise.resolve([]),
+		input.labelNames ? listLabels(apiKey) : Promise.resolve([]),
+		input.projectName ? listProjects(apiKey, teamId) : Promise.resolve([]),
+	]);
+
+	// Resolve assignee
+	let assigneeId: string | undefined;
+	if (input.assigneeName) {
+		const user = users.find((u) => u.name === input.assigneeName);
+		if (!user) {
+			throw new Error(`User not found: ${input.assigneeName}`);
+		}
+		assigneeId = user.id;
+	}
+
+	// Resolve state
+	let stateId: string | undefined;
+	if (input.stateName) {
+		const state = states.find((s) => s.name === input.stateName);
+		if (!state) {
+			throw new Error(`State not found in team ${input.teamName}: ${input.stateName}`);
+		}
+		stateId = state.id;
+	}
+
+	// Resolve labels
+	let labelIds: string[] | undefined;
+	if (input.labelNames && input.labelNames.length > 0) {
+		const allLabels = [...teamLabels, ...workspaceLabels];
+		labelIds = [];
+		for (const labelName of input.labelNames) {
+			const label = allLabels.find((l) => l.name === labelName);
+			if (!label) {
+				throw new Error(`Label not found: ${labelName}`);
+			}
+			labelIds.push(label.id);
+		}
+	}
+
+	// Resolve project
+	let projectId: string | undefined;
+	if (input.projectName) {
+		const project = projects.find((p) => p.name === input.projectName);
+		if (!project) {
+			throw new Error(`Project not found in team ${input.teamName}: ${input.projectName}`);
+		}
+		projectId = project.id;
+	}
+
+	// 3. Call the ID-based createIssue
+	return createIssue(apiKey, {
+		teamId,
+		title: input.title,
+		description: input.description,
+		priority: input.priority,
+		assigneeId,
+		labelIds,
+		projectId,
+		stateId,
+	});
+}
+
+/**
  * List users
  */
 export interface User {
 	id: string;
 	name: string;
-	email: string;
 	active: boolean;
 }
 
@@ -283,7 +426,6 @@ export async function listUsers(apiKey: string): Promise<User[]> {
         nodes {
           id
           name
-          email
           active
         }
       }
@@ -295,7 +437,6 @@ export async function listUsers(apiKey: string): Promise<User[]> {
 			nodes: Array<{
 				id: string;
 				name: string;
-				email: string;
 				active: boolean;
 			}>;
 		};
@@ -350,30 +491,181 @@ export interface Project {
 	state: string;
 }
 
-export async function listProjects(apiKey: string, teamId?: string): Promise<Project[]> {
+export async function listProjects(
+	apiKey: string,
+	teamId?: string,
+	includeCompleted = false,
+): Promise<Project[]> {
+	if (teamId) {
+		// Get projects for a specific team
+		const query = `
+      query ListTeamProjects($teamId: String!) {
+        team(id: $teamId) {
+          projects {
+            nodes {
+              id
+              name
+              state
+            }
+          }
+        }
+      }
+    `;
+
+		const data = await executeQuery<{
+			team: {
+				projects: {
+					nodes: Array<{
+						id: string;
+						name: string;
+						state: string;
+					}>;
+				};
+			};
+		}>(query, { teamId }, apiKey);
+
+		const projects = data.team.projects.nodes;
+		return includeCompleted
+			? projects
+			: projects.filter((p) => p.state !== "completed" && p.state !== "canceled");
+	} else {
+		// Get all workspace projects
+		const query = `
+      query ListProjects($filter: ProjectFilter) {
+        projects(filter: $filter) {
+          nodes {
+            id
+            name
+            state
+          }
+        }
+      }
+    `;
+
+		const filter: Record<string, unknown> = {};
+		if (!includeCompleted) {
+			filter.state = { nin: ["completed", "canceled"] };
+		}
+
+		const data = await executeQuery<{
+			projects: {
+				nodes: Array<{
+					id: string;
+					name: string;
+					state: string;
+				}>;
+			};
+		}>(query, { filter }, apiKey);
+
+		return data.projects.nodes;
+	}
+}
+
+/**
+ * Get workspace overview - all teams, users, labels, states, and projects
+ */
+export interface WorkspaceOverview {
+	teams: Array<{
+		id: string;
+		name: string;
+		key: string;
+		states: string[];
+		labels: string[];
+		projects: string[];
+	}>;
+	workspaceLabels: string[];
+	initiatives: string[];
+	users: Array<{
+		id: string;
+		name: string;
+	}>;
+}
+
+export async function getWorkspaceOverview(apiKey: string): Promise<WorkspaceOverview> {
 	const query = `
-    query ListProjects($filter: ProjectFilter) {
-      projects(filter: $filter) {
+    query GetWorkspaceOverview {
+      teams {
         nodes {
           id
           name
-          state
+          key
+          states {
+            nodes {
+              name
+            }
+          }
+          projects {
+            nodes {
+              name
+              state
+            }
+          }
+        }
+      }
+      issueLabels(filter: { team: { null: true } }) {
+        nodes {
+          name
+        }
+      }
+      initiatives {
+        nodes {
+          name
+        }
+      }
+      users(filter: { active: { eq: true } }) {
+        nodes {
+          id
+          name
         }
       }
     }
   `;
 
-	const filter = teamId ? { team: { id: { eq: teamId } } } : {};
-
 	const data = await executeQuery<{
-		projects: {
+		teams: {
 			nodes: Array<{
 				id: string;
 				name: string;
-				state: string;
+				key: string;
+				states: { nodes: Array<{ name: string }> };
+				projects: { nodes: Array<{ name: string; state: string }> };
 			}>;
 		};
-	}>(query, { filter }, apiKey);
+		issueLabels: {
+			nodes: Array<{ name: string }>;
+		};
+		initiatives: {
+			nodes: Array<{ name: string }>;
+		};
+		users: {
+			nodes: Array<{
+				id: string;
+				name: string;
+			}>;
+		};
+	}>(query, {}, apiKey);
 
-	return data.projects.nodes;
+	// Fetch team-specific labels separately
+	const teamsWithLabels = await Promise.all(
+		data.teams.nodes.map(async (team) => {
+			const teamLabels = await listLabels(apiKey, team.id);
+			return {
+				id: team.id,
+				name: team.name,
+				key: team.key,
+				states: team.states.nodes.map((s) => s.name),
+				labels: teamLabels.map((l) => l.name),
+				projects: team.projects.nodes
+					.filter((p) => p.state !== "completed" && p.state !== "canceled")
+					.map((p) => p.name),
+			};
+		}),
+	);
+
+	return {
+		teams: teamsWithLabels,
+		workspaceLabels: data.issueLabels.nodes.map((l) => l.name),
+		initiatives: data.initiatives.nodes.map((i) => i.name),
+		users: data.users.nodes,
+	};
 }
