@@ -12,7 +12,7 @@ import {
 } from "./linear";
 
 // Define our Linear MCP agent
-export class MyMCP extends McpAgent<Env> {
+export class LinearLiteMCP extends McpAgent<Env> {
 	server = new McpServer({
 		name: "Linear Lite MCP",
 		version: "0.1.0",
@@ -253,7 +253,7 @@ export default {
 		const url = new URL(request.url);
 
 		if (url.pathname === "/mcp") {
-			return MyMCP.serve("/mcp").fetch(request, env, ctx);
+			return LinearLiteMCP.serve("/mcp").fetch(request, env, ctx);
 		}
 
 		return new Response("Not found", { status: 404 });
