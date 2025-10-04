@@ -47,11 +47,11 @@ export interface Issue {
 	priority: number;
 	projectName: string | null;
 	dueDate: string | null;
+	createdAt?: string;
+	updatedAt?: string;
 	description?: string | null;
 	labels?: string[];
 	assigneeName?: string | null;
-	createdAt?: string;
-	updatedAt?: string;
 	creatorName?: string | null;
 }
 
@@ -64,6 +64,7 @@ export async function searchIssues(
 		state?: string;
 		priority?: number;
 		includeCompleted?: boolean;
+		updatedAt?: string;
 	},
 	first = 25,
 ): Promise<Issue[]> {
@@ -73,6 +74,7 @@ export async function searchIssues(
 	if (filter?.assigneeId) filterObj.assignee = { id: { eq: filter.assigneeId } };
 	if (filter?.state) filterObj.state = { name: { eq: filter.state } };
 	if (filter?.priority) filterObj.priority = { eq: filter.priority };
+	if (filter?.updatedAt) filterObj.updatedAt = { gte: filter.updatedAt };
 
 	// Exclude completed and canceled by default
 	if (!filter?.includeCompleted) {
@@ -302,6 +304,142 @@ export async function createIssue(
 }
 
 /**
+ * Update an existing issue (internal - uses IDs)
+ */
+export interface UpdateIssueInput {
+	issueId: string;
+	title?: string;
+	description?: string;
+	priority?: number;
+	assigneeId?: string;
+	labelIds?: string[];
+	projectId?: string;
+	stateId?: string;
+}
+
+export interface UpdateIssueResult {
+	success: boolean;
+	issue?: {
+		id: string;
+		identifier: string;
+		title: string;
+		url: string;
+	};
+}
+
+export async function updateIssue(
+	apiKey: string,
+	input: UpdateIssueInput,
+): Promise<UpdateIssueResult> {
+	const mutation = `
+    mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
+      issueUpdate(id: $id, input: $input) {
+        success
+        issue {
+          id
+          identifier
+          title
+          url
+        }
+      }
+    }
+  `;
+
+	const { issueId, ...updateInput } = input;
+
+	const data = await executeQuery<{
+		issueUpdate: {
+			success: boolean;
+			issue: {
+				id: string;
+				identifier: string;
+				title: string;
+				url: string;
+			};
+		};
+	}>(mutation, { id: issueId, input: updateInput }, apiKey);
+
+	return data.issueUpdate;
+}
+
+/**
+ * Helper: Resolve names to IDs
+ */
+interface NameResolutionInput {
+	assigneeName?: string;
+	stateName?: string;
+	labelNames?: string[];
+	projectName?: string;
+}
+
+interface NameResolutionResult {
+	assigneeId?: string;
+	stateId?: string;
+	labelIds?: string[];
+	projectId?: string;
+}
+
+async function resolveNamesToIds(
+	apiKey: string,
+	teamId: string,
+	teamName: string,
+	input: NameResolutionInput,
+): Promise<NameResolutionResult> {
+	// Fetch all resources in parallel
+	const [users, states, teamLabels, workspaceLabels, projects] = await Promise.all([
+		input.assigneeName ? listUsers(apiKey) : Promise.resolve([]),
+		input.stateName ? listStates(apiKey, teamId) : Promise.resolve([]),
+		input.labelNames ? listLabels(apiKey, teamId) : Promise.resolve([]),
+		input.labelNames ? listLabels(apiKey) : Promise.resolve([]),
+		input.projectName ? listProjects(apiKey, teamId) : Promise.resolve([]),
+	]);
+
+	const result: NameResolutionResult = {};
+
+	// Resolve assignee
+	if (input.assigneeName) {
+		const user = users.find((u) => u.name === input.assigneeName);
+		if (!user) {
+			throw new Error(`User not found: ${input.assigneeName}`);
+		}
+		result.assigneeId = user.id;
+	}
+
+	// Resolve state
+	if (input.stateName) {
+		const state = states.find((s) => s.name === input.stateName);
+		if (!state) {
+			throw new Error(`State not found in team ${teamName}: ${input.stateName}`);
+		}
+		result.stateId = state.id;
+	}
+
+	// Resolve labels
+	if (input.labelNames && input.labelNames.length > 0) {
+		const allLabels = [...teamLabels, ...workspaceLabels];
+		result.labelIds = [];
+		for (const labelName of input.labelNames) {
+			const label = allLabels.find((l) => l.name === labelName);
+			if (!label) {
+				throw new Error(`Label not found: ${labelName}`);
+			}
+			result.labelIds.push(label.id);
+		}
+	}
+
+	// Resolve project
+	if (input.projectName) {
+		const project = projects.find((p) => p.name === input.projectName);
+		if (!project) {
+			throw new Error(`Project not found in team ${teamName}: ${input.projectName}`);
+		}
+		result.projectId = project.id;
+	}
+
+	return result;
+}
+
+/**
  * Create a new issue by name (user-friendly API)
  */
 export interface CreateIssueByNameInput {
@@ -325,71 +463,69 @@ export async function createIssueByName(
 	if (!team) {
 		throw new Error(`Team not found: ${input.teamName}`);
 	}
-	const teamId = team.id;
 
-	// 2. Resolve all names to IDs in parallel
-	const [users, states, teamLabels, workspaceLabels, projects] = await Promise.all([
-		input.assigneeName ? listUsers(apiKey) : Promise.resolve([]),
-		input.stateName ? listStates(apiKey, teamId) : Promise.resolve([]),
-		input.labelNames ? listLabels(apiKey, teamId) : Promise.resolve([]),
-		input.labelNames ? listLabels(apiKey) : Promise.resolve([]),
-		input.projectName ? listProjects(apiKey, teamId) : Promise.resolve([]),
-	]);
-
-	// Resolve assignee
-	let assigneeId: string | undefined;
-	if (input.assigneeName) {
-		const user = users.find((u) => u.name === input.assigneeName);
-		if (!user) {
-			throw new Error(`User not found: ${input.assigneeName}`);
-		}
-		assigneeId = user.id;
-	}
-
-	// Resolve state
-	let stateId: string | undefined;
-	if (input.stateName) {
-		const state = states.find((s) => s.name === input.stateName);
-		if (!state) {
-			throw new Error(`State not found in team ${input.teamName}: ${input.stateName}`);
-		}
-		stateId = state.id;
-	}
-
-	// Resolve labels
-	let labelIds: string[] | undefined;
-	if (input.labelNames && input.labelNames.length > 0) {
-		const allLabels = [...teamLabels, ...workspaceLabels];
-		labelIds = [];
-		for (const labelName of input.labelNames) {
-			const label = allLabels.find((l) => l.name === labelName);
-			if (!label) {
-				throw new Error(`Label not found: ${labelName}`);
-			}
-			labelIds.push(label.id);
-		}
-	}
-
-	// Resolve project
-	let projectId: string | undefined;
-	if (input.projectName) {
-		const project = projects.find((p) => p.name === input.projectName);
-		if (!project) {
-			throw new Error(`Project not found in team ${input.teamName}: ${input.projectName}`);
-		}
-		projectId = project.id;
-	}
+	// 2. Resolve all names to IDs
+	const resolved = await resolveNamesToIds(apiKey, team.id, team.name, input);
 
 	// 3. Call the ID-based createIssue
 	return createIssue(apiKey, {
-		teamId,
+		teamId: team.id,
 		title: input.title,
 		description: input.description,
 		priority: input.priority,
-		assigneeId,
-		labelIds,
-		projectId,
-		stateId,
+		...resolved,
+	});
+}
+
+/**
+ * Update an existing issue by name (user-friendly API)
+ */
+export interface UpdateIssueByNameInput {
+	identifier: string;
+	title?: string;
+	description?: string;
+	priority?: number;
+	assigneeName?: string;
+	labelNames?: string[];
+	projectName?: string;
+	stateName?: string;
+}
+
+export async function updateIssueByName(
+	apiKey: string,
+	input: UpdateIssueByNameInput,
+): Promise<UpdateIssueResult> {
+	// 1. Extract team from identifier (format: TEAM-123) and get issue ID
+	const teamKey = input.identifier.split('-')[0];
+	const teams = await listTeams(apiKey);
+	const team = teams.find((t) => t.key === teamKey);
+	if (!team) {
+		throw new Error(`Team not found for identifier: ${input.identifier}`);
+	}
+
+	// 2. Get the issue ID
+	const issueQuery = `
+    query GetIssueId($id: String!) {
+      issue(id: $id) {
+        id
+      }
+    }
+  `;
+
+	const issueData = await executeQuery<{
+		issue: { id: string };
+	}>(issueQuery, { id: input.identifier }, apiKey);
+
+	// 3. Resolve all names to IDs
+	const resolved = await resolveNamesToIds(apiKey, team.id, team.name, input);
+
+	// 4. Call the ID-based updateIssue
+	return updateIssue(apiKey, {
+		issueId: issueData.issue.id,
+		title: input.title,
+		description: input.description,
+		priority: input.priority,
+		...resolved,
 	});
 }
 

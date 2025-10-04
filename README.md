@@ -26,9 +26,10 @@ Search issues with minimal payload. Returns only essential fields:
 - `state` (optional): Filter by state name
 - `priority` (optional): Filter by priority (0-4)
 - `limit` (optional): Number of results (1-100, default: 25)
-- `includeCompleted` (optional): Include completed/canceled issues when `true`
+- `includeCompleted` (optional): Include completed/canceled issues (default: false)
+- `updatedAt` (optional): Filter by update time using ISO 8601 duration format (e.g., "-P1D" for last 24 hours, "-P7D" for last week)
 
-### `issue_get_detail`
+### `issue_get`
 Get full issue details including:
 - All fields from lean search
 - `description`, `labels`, `assigneeName`, `creatorName`, `createdAt`, `updatedAt`
@@ -44,7 +45,7 @@ Fetch workspace metadata in a single call. Returns:
 
 **Parameters**: _None_
 
-### `issues_create`
+### `issue_create`
 Create a new issue by human-friendly names. Resolves names to IDs internally before calling Linear.
 
 **Parameters**:
@@ -56,6 +57,26 @@ Create a new issue by human-friendly names. Resolves names to IDs internally bef
 - `labelNames` (optional): Array of label names (team or workspace labels)
 - `projectName` (optional): Associate with a project
 - `stateName` (optional): Set initial workflow state
+
+**Returns**:
+- `success`: Boolean indicating if creation succeeded
+- `issue.identifier`: Created issue identifier
+
+### `issue_update`
+Update an existing issue by human-friendly names. Resolves names to IDs internally before calling Linear.
+
+**Parameters**:
+- `identifier` (required): Issue identifier (e.g., "JHS-1")
+- `title` (optional): New title
+- `description` (optional): New description
+- `priority` (optional): New priority (0-4)
+- `assigneeName` (optional): Reassign by user display name
+- `labelNames` (optional): Replace labels with new array of label names
+- `projectName` (optional): Move to a different project
+- `stateName` (optional): Change workflow state
+
+**Returns**:
+- `success`: Boolean indicating if update succeeded
 
 ## Setup
 
@@ -122,6 +143,14 @@ npm run deploy
 }
 ```
 
+### Search recently updated issues
+```json
+{
+  "updatedAt": "-P1D",
+  "teamName": "Product"
+}
+```
+
 ### Create an issue
 ```json
 {
@@ -130,6 +159,15 @@ npm run deploy
   "assigneeName": "Daiki",
   "labelNames": ["Backend"],
   "priority": 2
+}
+```
+
+### Update an issue
+```json
+{
+  "identifier": "JHS-1",
+  "stateName": "Done",
+  "priority": 1
 }
 ```
 
@@ -193,7 +231,7 @@ Result: **~70% smaller payloads** for list operations.
 
 ## Future Enhancements
 
-- [ ] Issue updates
+- [x] Issue updates
 - [ ] Comment management
 - [ ] Project and Initiative search
 - [ ] Webhook support for real-time updates

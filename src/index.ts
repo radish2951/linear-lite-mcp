@@ -5,6 +5,7 @@ import {
 	searchIssues,
 	getIssue,
 	createIssueByName,
+	updateIssueByName,
 	getWorkspaceOverview,
 	listTeams,
 	listUsers,
@@ -47,7 +48,8 @@ export class MyMCP extends McpAgent<Env> {
 				state: z.string().optional(),
 				priority: z.number().int().min(0).max(4).optional(),
 				limit: z.number().min(1).max(100).default(25),
-				includeCompleted: z.boolean().optional(),
+				includeCompleted: z.boolean().default(false),
+				updatedAt: z.string().optional(),
 			},
 			async ({
 				query,
@@ -57,6 +59,7 @@ export class MyMCP extends McpAgent<Env> {
 				priority,
 				limit,
 				includeCompleted,
+				updatedAt,
 			}) => {
 				try {
 					const apiKey = this.getApiKey();
@@ -86,7 +89,7 @@ export class MyMCP extends McpAgent<Env> {
 					const issues = await searchIssues(
 						apiKey,
 						query,
-						{ teamId, assigneeId, state, priority, includeCompleted },
+						{ teamId, assigneeId, state, priority, includeCompleted, updatedAt },
 						limit,
 					);
 					return {
@@ -100,7 +103,7 @@ export class MyMCP extends McpAgent<Env> {
 
 		// Get full issue details
 		this.server.tool(
-			"issue_get_detail",
+			"issue_get",
 			{
 				identifier: z.string(),
 			},
@@ -123,7 +126,6 @@ export class MyMCP extends McpAgent<Env> {
 				const apiKey = this.getApiKey();
 				const overview = await getWorkspaceOverview(apiKey);
 
-				// Remove IDs from the response
 				const cleanedOverview = {
 					teams: overview.teams.map(({ id, ...team }) => team),
 					workspaceLabels: overview.workspaceLabels,
@@ -143,7 +145,7 @@ export class MyMCP extends McpAgent<Env> {
 
 		// Create issue by name
 		this.server.tool(
-			"issues_create",
+			"issue_create",
 			{
 				teamName: z.string(),
 				title: z.string(),
@@ -177,14 +179,11 @@ export class MyMCP extends McpAgent<Env> {
 						stateName,
 					});
 
-					// Remove ID from the response
 					const cleanedResult = {
 						success: result.success,
 						issue: result.issue
 							? {
 									identifier: result.issue.identifier,
-									title: result.issue.title,
-									url: result.issue.url,
 								}
 							: undefined,
 					};
@@ -192,6 +191,53 @@ export class MyMCP extends McpAgent<Env> {
 					return {
 						content: [
 							{ type: "text", text: JSON.stringify(cleanedResult, null, 2) },
+						],
+					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// Update issue by name
+		this.server.tool(
+			"issue_update",
+			{
+				identifier: z.string(),
+				title: z.string().optional(),
+				description: z.string().optional(),
+				priority: z.number().int().min(0).max(4).optional(),
+				assigneeName: z.string().optional(),
+				labelNames: z.array(z.string()).optional(),
+				projectName: z.string().optional(),
+				stateName: z.string().optional(),
+			},
+			async ({
+				identifier,
+				title,
+				description,
+				priority,
+				assigneeName,
+				labelNames,
+				projectName,
+				stateName,
+			}) => {
+				try {
+					const apiKey = this.getApiKey();
+					const result = await updateIssueByName(apiKey, {
+						identifier,
+						title,
+						description,
+						priority,
+						assigneeName,
+						labelNames,
+						projectName,
+						stateName,
+					});
+
+					return {
+						content: [
+							{ type: "text", text: JSON.stringify({ success: result.success }, null, 2) },
 						],
 					};
 				} catch (error) {
