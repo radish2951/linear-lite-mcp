@@ -55,9 +55,9 @@ export class MyMCP extends McpAgent<Env> {
 		this.server.tool(
 			"issues_get",
 			{
-				issueId: z.string(),
+				identifier: z.string(),
 			},
-			async ({ issueId }) => {
+			async ({ identifier }) => {
 				const apiKey = this.env.LINEAR_API_KEY;
 				if (!apiKey) {
 					return {
@@ -66,7 +66,7 @@ export class MyMCP extends McpAgent<Env> {
 				}
 
 				try {
-					const issue = await getIssue(apiKey, issueId);
+					const issue = await getIssue(apiKey, identifier);
 					return {
 						content: [{ type: "text", text: JSON.stringify(issue, null, 2) }],
 					};

@@ -46,9 +46,8 @@ export interface IssueLean {
 	title: string;
 	state: string;
 	priority: number;
-	assigneeName: string | null;
-	url: string;
-	updatedAt: string;
+	projectName: string | null;
+	dueDate: string | null;
 }
 
 export async function searchIssuesLean(
@@ -75,9 +74,8 @@ export async function searchIssuesLean(
           title
           state { name }
           priority
-          assignee { name }
-          url
-          updatedAt
+          project { name }
+          dueDate
         }
       }
     }
@@ -90,9 +88,8 @@ export async function searchIssuesLean(
 				title: string;
 				state: { name: string };
 				priority: number;
-				assignee: { name: string } | null;
-				url: string;
-				updatedAt: string;
+				project: { name: string } | null;
+				dueDate: string | null;
 			}>;
 		};
 	}>(query, { filter: filterObj, first }, apiKey);
@@ -102,9 +99,8 @@ export async function searchIssuesLean(
 		title: issue.title,
 		state: issue.state.name,
 		priority: issue.priority,
-		assigneeName: issue.assignee?.name || null,
-		url: issue.url,
-		updatedAt: issue.updatedAt,
+		projectName: issue.project?.name || null,
+		dueDate: issue.dueDate,
 	}));
 }
 
@@ -114,11 +110,12 @@ export async function searchIssuesLean(
 export interface IssueDetail extends IssueLean {
 	description: string | null;
 	labels: string[];
+	assigneeName: string | null;
 	createdAt: string;
 	creatorName: string | null;
 }
 
-export async function getIssue(apiKey: string, issueId: string): Promise<IssueDetail> {
+export async function getIssue(apiKey: string, identifier: string): Promise<IssueDetail> {
 	const query = `
     query GetIssue($id: String!) {
       issue(id: $id) {
@@ -130,9 +127,9 @@ export async function getIssue(apiKey: string, issueId: string): Promise<IssueDe
         assignee { name }
         creator { name }
         labels { nodes { name } }
-        url
+        project { name }
+        dueDate
         createdAt
-        updatedAt
       }
     }
   `;
@@ -147,11 +144,11 @@ export async function getIssue(apiKey: string, issueId: string): Promise<IssueDe
 			assignee: { name: string } | null;
 			creator: { name: string } | null;
 			labels: { nodes: Array<{ name: string }> };
-			url: string;
+			project: { name: string } | null;
+			dueDate: string | null;
 			createdAt: string;
-			updatedAt: string;
 		};
-	}>(query, { id: issueId }, apiKey);
+	}>(query, { id: identifier }, apiKey);
 
 	return {
 		identifier: data.issue.identifier,
@@ -159,11 +156,11 @@ export async function getIssue(apiKey: string, issueId: string): Promise<IssueDe
 		description: data.issue.description,
 		state: data.issue.state.name,
 		priority: data.issue.priority,
+		projectName: data.issue.project?.name || null,
+		dueDate: data.issue.dueDate,
 		assigneeName: data.issue.assignee?.name || null,
 		creatorName: data.issue.creator?.name || null,
 		labels: data.issue.labels.nodes.map((l) => l.name),
-		url: data.issue.url,
 		createdAt: data.issue.createdAt,
-		updatedAt: data.issue.updatedAt,
 	};
 }
