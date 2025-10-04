@@ -15,13 +15,14 @@ export class MyMCP extends McpAgent<Env> {
 		this.server.tool(
 			"issues_search_lean",
 			{
+				query: z.string().optional(),
 				teamId: z.string().optional(),
 				assigneeId: z.string().optional(),
 				state: z.string().optional(),
 				priority: z.number().min(0).max(4).optional(),
 				limit: z.number().min(1).max(100).default(25),
 			},
-			async ({ teamId, assigneeId, state, priority, limit }) => {
+			async ({ query, teamId, assigneeId, state, priority, limit }) => {
 				const apiKey = this.env.LINEAR_API_KEY;
 				if (!apiKey) {
 					return {
@@ -32,6 +33,7 @@ export class MyMCP extends McpAgent<Env> {
 				try {
 					const issues = await searchIssuesLean(
 						apiKey,
+						query,
 						{ teamId, assigneeId, state, priority },
 						limit,
 					);

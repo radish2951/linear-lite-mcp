@@ -52,6 +52,7 @@ export interface IssueLean {
 
 export async function searchIssuesLean(
 	apiKey: string,
+	query?: string,
 	filter?: {
 		teamId?: string;
 		assigneeId?: string;
@@ -60,13 +61,22 @@ export async function searchIssuesLean(
 	},
 	first = 25,
 ): Promise<IssueLean[]> {
+	// Build filter object
 	const filterObj: Record<string, unknown> = {};
 	if (filter?.teamId) filterObj.team = { id: { eq: filter.teamId } };
 	if (filter?.assigneeId) filterObj.assignee = { id: { eq: filter.assigneeId } };
 	if (filter?.state) filterObj.state = { name: { eq: filter.state } };
 	if (filter?.priority) filterObj.priority = { eq: filter.priority };
 
-	const query = `
+	// Add text search to filter if query provided
+	if (query) {
+		filterObj.or = [
+			{ title: { containsIgnoreCase: query } },
+			{ description: { containsIgnoreCase: query } },
+		];
+	}
+
+	const graphqlQuery = `
     query SearchIssuesLean($filter: IssueFilter, $first: Int) {
       issues(filter: $filter, first: $first) {
         nodes {
@@ -92,7 +102,7 @@ export async function searchIssuesLean(
 				dueDate: string | null;
 			}>;
 		};
-	}>(query, { filter: filterObj, first }, apiKey);
+	}>(graphqlQuery, { filter: filterObj, first }, apiKey);
 
 	return data.issues.nodes.map((issue) => ({
 		identifier: issue.identifier,

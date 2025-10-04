@@ -14,10 +14,11 @@ A **lightweight** Linear MCP server on Cloudflare Workers. This implementation u
 ### `issues_search_lean`
 Search issues with minimal payload. Returns only essential fields:
 - `identifier`, `title`, `state`, `priority`
-- `assigneeName` (flattened)
-- `url`, `updatedAt`
+- `projectName` (flattened)
+- `dueDate`
 
 **Parameters**:
+- `query` (optional): Freetext search across title and description
 - `teamId` (optional): Filter by team
 - `assigneeId` (optional): Filter by assignee
 - `state` (optional): Filter by state name
@@ -27,10 +28,10 @@ Search issues with minimal payload. Returns only essential fields:
 ### `issues_get`
 Get full issue details including:
 - All fields from lean search
-- `description`, `labels`, `creator`, `createdAt`
+- `description`, `labels`, `assigneeName`, `creator`, `createdAt`
 
 **Parameters**:
-- `issueId` (required): Issue ID to fetch
+- `identifier` (required): Issue identifier (e.g., "JHS-1")
 
 ## Setup
 
@@ -64,6 +65,13 @@ npm run deploy
 
 ## Usage Examples
 
+### Freetext search
+```json
+{
+  "query": "ヒアリング"
+}
+```
+
 ### Search issues by state
 ```json
 {
@@ -80,10 +88,18 @@ npm run deploy
 }
 ```
 
+### Combined search
+```json
+{
+  "query": "API",
+  "state": "In Progress"
+}
+```
+
 ### Get issue details
 ```json
 {
-  "issueId": "issue-id-here"
+  "identifier": "JHS-1"
 }
 ```
 
