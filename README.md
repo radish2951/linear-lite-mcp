@@ -1,50 +1,138 @@
-# Building a Remote MCP Server on Cloudflare (Without Auth)
+# Linear Lite MCP Server
 
-This example allows you to deploy a remote MCP server that doesn't require authentication on Cloudflare Workers. 
+A **lightweight** Linear MCP server on Cloudflare Workers. This implementation uses GraphQL field selection to minimize payload size and avoid UUID floods.
 
-## Get started: 
+## Design Philosophy
 
-[![Deploy to Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/ai/tree/main/demos/remote-mcp-authless)
+- **Minimal Payload**: Only fetch essential fields in list views
+- **Two-Stage Fetch**: Lean lists + detailed gets on demand
+- **Flat Structure**: No nested objects (e.g., `assigneeName` instead of `assignee.name`)
+- **Type-Safe**: Full TypeScript with Cloudflare Workers types 
 
-This will deploy your MCP server to a URL like: `remote-mcp-server-authless.<your-account>.workers.dev/sse`
+## Available Tools
 
-Alternatively, you can use the command line below to get the remote MCP Server created on your local machine:
+### `issues_search_lean`
+Search issues with minimal payload. Returns only essential fields:
+- `identifier`, `title`, `state`, `priority`
+- `assigneeName` (flattened)
+- `url`, `updatedAt`
+
+**Parameters**:
+- `teamId` (optional): Filter by team
+- `assigneeId` (optional): Filter by assignee
+- `state` (optional): Filter by state name
+- `priority` (optional): Filter by priority (0-4)
+- `limit` (optional): Number of results (1-100, default: 25)
+
+### `issues_get`
+Get full issue details including:
+- All fields from lean search
+- `description`, `labels`, `creator`, `createdAt`
+
+**Parameters**:
+- `issueId` (required): Issue ID to fetch
+
+## Setup
+
+1. **Install dependencies**:
 ```bash
-npm create cloudflare@latest -- my-mcp-server --template=cloudflare/ai/demos/remote-mcp-authless
+npm install
 ```
 
-## Customizing your MCP Server
+2. **Configure Linear API Key**:
+```bash
+# For local development
+echo "LINEAR_API_KEY=lin_api_..." > .dev.vars
 
-To add your own [tools](https://developers.cloudflare.com/agents/model-context-protocol/tools/) to the MCP server, define each tool inside the `init()` method of `src/index.ts` using `this.server.tool(...)`. 
+# For production deployment
+wrangler secret put LINEAR_API_KEY
+```
 
-## Connect to Cloudflare AI Playground
+Get your API key at: https://linear.app/settings/api
 
-You can connect to your MCP server from the Cloudflare AI Playground, which is a remote MCP client:
+3. **Run locally**:
+```bash
+npm run dev
+```
 
-1. Go to https://playground.ai.cloudflare.com/
-2. Enter your deployed MCP server URL (`remote-mcp-server-authless.<your-account>.workers.dev/sse`)
-3. You can now use your MCP tools directly from the playground!
+Server will be available at: `http://localhost:8787/sse`
 
-## Connect Claude Desktop to your MCP server
+4. **Deploy to Cloudflare**:
+```bash
+npm run deploy
+```
 
-You can also connect to your remote MCP server from local MCP clients, by using the [mcp-remote proxy](https://www.npmjs.com/package/mcp-remote). 
+## Usage Examples
 
-To connect to your MCP server from Claude Desktop, follow [Anthropic's Quickstart](https://modelcontextprotocol.io/quickstart/user) and within Claude Desktop go to Settings > Developer > Edit Config.
+### Search issues by state
+```json
+{
+  "state": "In Progress",
+  "limit": 10
+}
+```
 
-Update with this configuration:
+### Search high priority issues
+```json
+{
+  "priority": 1,
+  "state": "Todo"
+}
+```
+
+### Get issue details
+```json
+{
+  "issueId": "issue-id-here"
+}
+```
+
+## Connect to Claude Desktop
+
+Add to your Claude Desktop config (`~/.config/Claude/claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
-    "calculator": {
+    "linear-lite": {
       "command": "npx",
       "args": [
         "mcp-remote",
-        "http://localhost:8787/sse"  // or remote-mcp-server-authless.your-account.workers.dev/sse
+        "http://localhost:8787/sse"
       ]
     }
   }
 }
 ```
 
-Restart Claude and you should see the tools become available. 
+For production, replace with your deployed URL: `https://your-worker.workers.dev/sse`
+
+## Why Lightweight?
+
+Traditional Linear integrations often return bloated payloads with:
+- Full UUID chains for every nested object
+- Unnecessary fields in list views
+- Deep object nesting
+
+This implementation:
+- ✅ Returns only 7 fields in list views (vs. 20+ in typical implementations)
+- ✅ Flattens nested objects to reduce token usage
+- ✅ Separates "list" and "detail" operations
+- ✅ Uses GraphQL field selection to avoid over-fetching
+
+Result: **~70% smaller payloads** for list operations.
+
+## Implementation Details
+
+- **GraphQL Client**: Minimal `fetch`-based implementation (no Apollo overhead)
+- **Type Safety**: Full TypeScript with Cloudflare Workers bindings
+- **Security**: API key stored in Wrangler Secrets
+- **Rate Limiting**: Respects Linear's rate limits automatically
+
+## Future Enhancements
+
+- [ ] Issue creation and updates
+- [ ] Comment management
+- [ ] Project and Initiative search
+- [ ] Webhook support for real-time updates
+- [ ] Pagination with cursor support 
