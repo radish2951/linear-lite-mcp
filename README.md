@@ -80,7 +80,9 @@ Get your API key at: https://linear.app/settings/api
 npm run dev
 ```
 
-Server will be available at: `http://localhost:8787/sse`
+Server will be available at: `http://localhost:8787/mcp`
+
+> Note: As of MCP protocol version 2024-11-05, the standalone SSE transport is deprecated in favour of Streamable HTTP.<sup>[1](#footnote1)</sup> This server therefore exposes only the Streamable HTTP endpoint at `/mcp`.
 
 4. **Deploy to Cloudflare**:
 ```bash
@@ -154,14 +156,18 @@ Add to your Claude Desktop config (`~/.config/Claude/claude_desktop_config.json`
       "command": "npx",
       "args": [
         "mcp-remote",
-        "http://localhost:8787/sse"
+        "http://localhost:8787/mcp"
       ]
     }
   }
 }
 ```
 
-For production, replace with your deployed URL: `https://your-worker.workers.dev/sse`
+For production, replace with your deployed URL: `https://your-worker.workers.dev/mcp`
+
+---
+
+<a id="footnote1">1</a>: [Model Context Protocol documentation, “Server-Sent Events (SSE) - Deprecated”](https://modelcontextprotocol.io/legacy/concepts/transports#server-sent-events-sse---deprecated).
 
 ## Why Lightweight?
 
