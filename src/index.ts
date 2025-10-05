@@ -4,12 +4,21 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { GitHubHandler } from "./github-handler";
 
-type Props = {
+type GitHubAuthProps = {
+	authType: "github";
 	login: string;
 	name: string;
 	email: string;
 	accessToken: string;
 };
+
+type TokenAuthProps = {
+	authType: "token";
+	tokenId: string;
+	label?: string;
+};
+
+type Props = GitHubAuthProps | TokenAuthProps;
 import {
 	searchIssues,
 	getIssue,
@@ -30,10 +39,18 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	});
 
 	private checkAccess() {
-		const allowedUsers = this.env.ALLOWED_GITHUB_USERS?.split(',').map(u => u.trim()) || [];
+		if (!this.props) {
+			throw new Error("Access denied. Missing authentication context.");
+		}
 
-		if (allowedUsers.length > 0 && !allowedUsers.includes(this.props?.login || '')) {
-			throw new Error(`Access denied. User ${this.props?.login} is not authorized.`);
+		if (this.props.authType === "token") {
+			return;
+		}
+
+		const allowedUsers = this.env.ALLOWED_GITHUB_USERS?.split(',').map((u) => u.trim()) || [];
+
+		if (allowedUsers.length > 0 && !allowedUsers.includes(this.props.login)) {
+			throw new Error(`Access denied. User ${this.props.login} is not authorized.`);
 		}
 	}
 
@@ -325,4 +342,73 @@ export default new OAuthProvider({
 	clientRegistrationEndpoint: "/register",
 	defaultHandler: GitHubHandler as any,
 	tokenEndpoint: "/token",
+	resolveExternalToken: async ({ token, env }) => {
+		const props = resolveServiceToken(token, env as Env);
+		return props ? { props } : null;
+	},
 });
+
+type ServiceTokenDescriptor = {
+	id: string;
+	secret: string;
+	label: string;
+};
+
+function resolveServiceToken(token: string, env: Env): TokenAuthProps | null {
+	const descriptors = parseServiceTokenConfig(env);
+	if (descriptors.length === 0) {
+		return null;
+	}
+
+	for (const descriptor of descriptors) {
+		if (timingSafeEqual(token, descriptor.secret)) {
+			return {
+				authType: "token",
+				tokenId: descriptor.id,
+				label: descriptor.label,
+			};
+		}
+	}
+
+	return null;
+}
+
+function parseServiceTokenConfig(env: Env): ServiceTokenDescriptor[] {
+	const envRecord = env as unknown as Record<string, string | undefined>;
+	const raw = envRecord.MCP_SERVICE_TOKENS;
+	if (!raw) {
+		return [];
+	}
+
+	return raw
+		.split(/[\n,]/)
+		.map((entry) => entry.trim())
+		.filter(Boolean)
+		.map((entry, index) => {
+			const separatorIndex = entry.indexOf(":");
+			if (separatorIndex === -1) {
+				const id = `token-${index + 1}`;
+				return { id, secret: entry, label: id } satisfies ServiceTokenDescriptor;
+			}
+
+			const idPart = entry.slice(0, separatorIndex).trim();
+			const secretPart = entry.slice(separatorIndex + 1).trim();
+			const id = idPart || `token-${index + 1}`;
+			return { id, secret: secretPart, label: idPart || id } satisfies ServiceTokenDescriptor;
+		})
+		.filter((descriptor) => descriptor.secret.length > 0);
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+	const encoder = new TextEncoder();
+	const aBytes = encoder.encode(a);
+	const bBytes = encoder.encode(b);
+	if (aBytes.length !== bBytes.length) {
+		return false;
+	}
+	let diff = 0;
+	for (let i = 0; i < aBytes.length; i += 1) {
+		diff |= aBytes[i] ^ bBytes[i];
+	}
+	return diff === 0;
+}

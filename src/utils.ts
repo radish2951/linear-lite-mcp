@@ -81,9 +81,16 @@ export async function fetchUpstreamAuthToken({
 
 // Context from the auth process, encrypted & stored in the auth token
 // and provided to the DurableMCP as this.props
-export type Props = {
-	login: string;
-	name: string;
-	email: string;
-	accessToken: string;
-};
+export type Props =
+	| {
+				authType: "github";
+				login: string;
+				name: string;
+				email: string;
+				accessToken: string;
+			}
+	| {
+				authType: "token";
+				tokenId: string;
+				label?: string;
+			};

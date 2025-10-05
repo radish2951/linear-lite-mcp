@@ -144,6 +144,7 @@ app.get("/callback", async (c) => {
 			label: name,
 		},
 		props: {
+			authType: "github",
 			accessToken,
 			email,
 			login,
