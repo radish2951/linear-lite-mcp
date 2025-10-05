@@ -9,6 +9,9 @@ import {
 	getWorkspaceOverview,
 	listTeams,
 	listUsers,
+	getIssueComments,
+	createComment,
+	updateComment,
 } from "./linear";
 
 // Define our Linear MCP agent
@@ -235,6 +238,67 @@ export class LinearLiteMCP extends McpAgent<Env> {
 						stateName,
 					});
 
+					return {
+						content: [
+							{ type: "text", text: JSON.stringify({ success: result.success }, null, 2) },
+						],
+					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// Get issue comments
+		this.server.tool(
+			"issue_comments_get",
+			{
+				identifier: z.string(),
+			},
+			async ({ identifier }) => {
+				try {
+					const apiKey = this.getApiKey();
+					const comments = await getIssueComments(apiKey, identifier);
+					return {
+						content: [{ type: "text", text: JSON.stringify(comments, null, 2) }],
+					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// Create comment on issue
+		this.server.tool(
+			"comment_create",
+			{
+				identifier: z.string(),
+				body: z.string(),
+			},
+			async ({ identifier, body }) => {
+				try {
+					const apiKey = this.getApiKey();
+					const result = await createComment(apiKey, { identifier, body });
+					return {
+						content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// Update comment
+		this.server.tool(
+			"comment_update",
+			{
+				commentId: z.string(),
+				body: z.string(),
+			},
+			async ({ commentId, body }) => {
+				try {
+					const apiKey = this.getApiKey();
+					const result = await updateComment(apiKey, { commentId, body });
 					return {
 						content: [
 							{ type: "text", text: JSON.stringify({ success: result.success }, null, 2) },

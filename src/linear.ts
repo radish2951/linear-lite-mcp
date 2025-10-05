@@ -655,6 +655,157 @@ export async function listProjects(
 }
 
 /**
+ * Comment type
+ */
+export interface Comment {
+	body: string;
+}
+
+/**
+ * Get comments for an issue
+ */
+export async function getIssueComments(
+	apiKey: string,
+	identifier: string,
+): Promise<Comment[]> {
+	const query = `
+    query GetIssueComments($id: String!) {
+      issue(id: $id) {
+        comments {
+          nodes {
+            body
+          }
+        }
+      }
+    }
+  `;
+
+	const data = await executeQuery<{
+		issue: {
+			comments: {
+				nodes: Array<{
+					body: string;
+				}>;
+			};
+		};
+	}>(query, { id: identifier }, apiKey);
+
+	return data.issue.comments.nodes.map((comment) => ({
+		body: comment.body,
+	}));
+}
+
+/**
+ * Create a comment on an issue
+ */
+export interface CreateCommentInput {
+	identifier: string;
+	body: string;
+}
+
+export interface CreateCommentResult {
+	success: boolean;
+	comment?: {
+		id: string;
+	};
+}
+
+/**
+ * Update a comment
+ */
+export interface UpdateCommentInput {
+	commentId: string;
+	body: string;
+}
+
+export interface UpdateCommentResult {
+	success: boolean;
+}
+
+export async function createComment(
+	apiKey: string,
+	input: CreateCommentInput,
+): Promise<CreateCommentResult> {
+	// First get the issue ID from identifier
+	const issueQuery = `
+    query GetIssueId($id: String!) {
+      issue(id: $id) {
+        id
+      }
+    }
+  `;
+
+	const issueData = await executeQuery<{
+		issue: { id: string };
+	}>(issueQuery, { id: input.identifier }, apiKey);
+
+	// Create the comment
+	const mutation = `
+    mutation CreateComment($input: CommentCreateInput!) {
+      commentCreate(input: $input) {
+        success
+        comment {
+          id
+        }
+      }
+    }
+  `;
+
+	const data = await executeQuery<{
+		commentCreate: {
+			success: boolean;
+			comment: {
+				id: string;
+			};
+		};
+	}>(
+		mutation,
+		{
+			input: {
+				issueId: issueData.issue.id,
+				body: input.body,
+			},
+		},
+		apiKey,
+	);
+
+	return data.commentCreate;
+}
+
+/**
+ * Update an existing comment
+ */
+export async function updateComment(
+	apiKey: string,
+	input: UpdateCommentInput,
+): Promise<UpdateCommentResult> {
+	const mutation = `
+    mutation UpdateComment($id: String!, $input: CommentUpdateInput!) {
+      commentUpdate(id: $id, input: $input) {
+        success
+      }
+    }
+  `;
+
+	const data = await executeQuery<{
+		commentUpdate: {
+			success: boolean;
+		};
+	}>(
+		mutation,
+		{
+			id: input.commentId,
+			input: {
+				body: input.body,
+			},
+		},
+		apiKey,
+	);
+
+	return data.commentUpdate;
+}
+
+/**
  * Get workspace overview - all teams, users, labels, states, and projects
  */
 export interface WorkspaceOverview {
