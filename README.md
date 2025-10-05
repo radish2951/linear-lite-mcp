@@ -30,12 +30,21 @@ Search issues with minimal payload. Returns only essential fields:
 - `updatedAt` (optional): Filter by update time using ISO 8601 duration format (e.g., "-P1D" for last 24 hours, "-P7D" for last week)
 
 ### `issue_get`
-Get full issue details including:
-- All fields from lean search
-- `description`, `labels`, `assigneeName`, `creatorName`, `createdAt`, `updatedAt`
+Get issue details with optional AI summarization.
 
 **Parameters**:
 - `identifier` (required): Issue identifier (e.g., "JHS-1")
+- `summarize_by_gemini` (optional): Enable AI summary (default: `true`)
+
+**When `summarize_by_gemini=true` (default)**:
+Returns only `summary_by_gemini` field containing a concise overview with all essential information (identifier, title, state, priority, assignee, project, dates, description, key decisions, and next steps)
+
+**When `summarize_by_gemini=false`**:
+Returns full issue details:
+- All fields from lean search
+- `description`, `labels`, `assigneeName`, `creatorName`, `createdAt`, `updatedAt`
+
+**Note**: AI summary requires `GEMINI_API_KEY` to be configured.
 
 ### `workspace_overview`
 Fetch workspace metadata in a single call. Returns:
@@ -85,16 +94,22 @@ Update an existing issue by human-friendly names. Resolves names to IDs internal
 npm install
 ```
 
-2. **Configure Linear API Key**:
+2. **Configure API Keys**:
 ```bash
 # For local development
-echo "LINEAR_API_KEY=lin_api_..." > .dev.vars
+cat > .dev.vars << EOF
+LINEAR_API_KEY=lin_api_...
+GEMINI_API_KEY=your_gemini_api_key_here
+EOF
 
 # For production deployment
 wrangler secret put LINEAR_API_KEY
+wrangler secret put GEMINI_API_KEY
 ```
 
-Get your API key at: https://linear.app/settings/api
+Get your API keys at:
+- Linear API: https://linear.app/settings/api
+- Gemini API: https://aistudio.google.com/apikey (free tier: 500 requests/day, 250k tokens/min)
 
 3. **Run locally**:
 ```bash

@@ -2,6 +2,8 @@
  * Lightweight Linear GraphQL client
  */
 
+import { GoogleGenAI } from "@google/genai";
+
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 
 /**
@@ -41,18 +43,19 @@ async function executeQuery<T>(
  * Issue type
  */
 export interface Issue {
-	identifier: string;
-	title: string;
-	state: string;
-	priority: number;
-	projectName: string | null;
-	dueDate: string | null;
+	identifier?: string;
+	title?: string;
+	state?: string;
+	priority?: number;
+	projectName?: string | null;
+	dueDate?: string | null;
 	createdAt?: string;
 	updatedAt?: string;
 	description?: string | null;
 	labels?: string[];
 	assigneeName?: string | null;
 	creatorName?: string | null;
+	summary_by_gemini?: string | null;
 }
 
 export async function searchIssues(
@@ -131,9 +134,53 @@ export async function searchIssues(
 }
 
 /**
- * Get full issue details
+ * Generate issue summary using Gemini API
  */
-export async function getIssue(apiKey: string, identifier: string): Promise<Issue> {
+async function generateIssueSummary(
+	geminiApiKey: string,
+	issue: Issue,
+	comments: Comment[],
+): Promise<string> {
+	try {
+		const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+
+		const data = {
+			issue,
+			comments,
+		};
+
+		const prompt = `Summarize this Linear issue data concisely.
+
+Requirements:
+- Must include the identifier
+- Priority levels: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low
+- Be informative enough - key details, context, and decisions
+- Be aware of time series - when things happened and how they evolved
+- Keep it brief, factual, and well-structured (max 5-7 lines)
+
+${JSON.stringify(data, null, 2)}`;
+
+		const response = await ai.models.generateContent({
+			model: "gemini-flash-lite-latest",
+			contents: prompt,
+		});
+
+		return response.text || "Failed to generate summary";
+	} catch (error) {
+		console.error("Gemini API error:", error);
+		return `Error: ${error instanceof Error ? error.message : String(error)}`;
+	}
+}
+
+/**
+ * Get full issue details with AI summary
+ */
+export async function getIssue(
+	apiKey: string,
+	identifier: string,
+	geminiApiKey?: string,
+	summarizeByGemini = true,
+): Promise<Issue> {
 	const query = `
     query GetIssue($id: String!) {
       issue(id: $id) {
@@ -170,7 +217,7 @@ export async function getIssue(apiKey: string, identifier: string): Promise<Issu
 		};
 	}>(query, { id: identifier }, apiKey);
 
-	return {
+	const issue: Issue = {
 		identifier: data.issue.identifier,
 		title: data.issue.title,
 		state: data.issue.state.name,
@@ -184,6 +231,19 @@ export async function getIssue(apiKey: string, identifier: string): Promise<Issu
 		updatedAt: data.issue.updatedAt,
 		creatorName: data.issue.creator?.name || null,
 	};
+
+	// Generate summary if Gemini API key is provided and summarizeByGemini is enabled
+	if (geminiApiKey && summarizeByGemini) {
+		const comments = await getIssueComments(apiKey, identifier);
+		const summary = await generateIssueSummary(geminiApiKey, issue, comments);
+
+		// Return only summary when using AI
+		return {
+			summary_by_gemini: summary,
+		};
+	}
+
+	return issue;
 }
 
 /**
@@ -658,7 +718,13 @@ export async function listProjects(
  * Comment type
  */
 export interface Comment {
+	id: string;
 	body: string;
+	createdAt: string;
+	updatedAt: string;
+	user: {
+		name: string;
+	};
 }
 
 /**
@@ -673,7 +739,13 @@ export async function getIssueComments(
       issue(id: $id) {
         comments {
           nodes {
+            id
             body
+            createdAt
+            updatedAt
+            user {
+              name
+            }
           }
         }
       }
@@ -684,14 +756,26 @@ export async function getIssueComments(
 		issue: {
 			comments: {
 				nodes: Array<{
+					id: string;
 					body: string;
+					createdAt: string;
+					updatedAt: string;
+					user: {
+						name: string;
+					};
 				}>;
 			};
 		};
 	}>(query, { id: identifier }, apiKey);
 
 	return data.issue.comments.nodes.map((comment) => ({
+		id: comment.id,
 		body: comment.body,
+		createdAt: comment.createdAt,
+		updatedAt: comment.updatedAt,
+		user: {
+			name: comment.user.name,
+		},
 	}));
 }
 

@@ -9,7 +9,6 @@ import {
 	getWorkspaceOverview,
 	listTeams,
 	listUsers,
-	getIssueComments,
 	createComment,
 	updateComment,
 } from "./linear";
@@ -27,6 +26,10 @@ export class LinearLiteMCP extends McpAgent<Env> {
 			throw new Error("LINEAR_API_KEY not configured");
 		}
 		return apiKey;
+	}
+
+	private getGeminiApiKey() {
+		return this.env.GEMINI_API_KEY;
 	}
 
 	private handleError(error: unknown) {
@@ -104,16 +107,18 @@ export class LinearLiteMCP extends McpAgent<Env> {
 			},
 		);
 
-		// Get full issue details
+		// Get full issue details with AI summary
 		this.server.tool(
 			"issue_get",
 			{
 				identifier: z.string(),
+				summarize_by_gemini: z.boolean().default(true),
 			},
-			async ({ identifier }) => {
+			async ({ identifier, summarize_by_gemini }) => {
 				try {
 					const apiKey = this.getApiKey();
-					const issue = await getIssue(apiKey, identifier);
+					const geminiApiKey = this.getGeminiApiKey();
+					const issue = await getIssue(apiKey, identifier, geminiApiKey, summarize_by_gemini);
 					return {
 						content: [{ type: "text", text: JSON.stringify(issue, null, 2) }],
 					};
@@ -242,25 +247,6 @@ export class LinearLiteMCP extends McpAgent<Env> {
 						content: [
 							{ type: "text", text: JSON.stringify({ success: result.success }, null, 2) },
 						],
-					};
-				} catch (error) {
-					return this.handleError(error);
-				}
-			},
-		);
-
-		// Get issue comments
-		this.server.tool(
-			"issue_comments_get",
-			{
-				identifier: z.string(),
-			},
-			async ({ identifier }) => {
-				try {
-					const apiKey = this.getApiKey();
-					const comments = await getIssueComments(apiKey, identifier);
-					return {
-						content: [{ type: "text", text: JSON.stringify(comments, null, 2) }],
 					};
 				} catch (error) {
 					return this.handleError(error);

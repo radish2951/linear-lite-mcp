@@ -8,6 +8,7 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		LINEAR_API_KEY: string;
+		GEMINI_API_KEY?: string;
 		MCP_OBJECT: DurableObjectNamespace<import("./src/index").MyMCP>;
 	}
 }
