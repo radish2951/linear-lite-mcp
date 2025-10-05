@@ -1,6 +1,15 @@
+import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { GitHubHandler } from "./github-handler";
+
+type Props = {
+	login: string;
+	name: string;
+	email: string;
+	accessToken: string;
+};
 import {
 	searchIssues,
 	getIssue,
@@ -14,13 +23,22 @@ import {
 } from "./linear";
 
 // Define our Linear MCP agent
-export class LinearLiteMCP extends McpAgent<Env> {
+export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	server = new McpServer({
 		name: "Linear Lite MCP",
 		version: "0.1.0",
 	});
 
+	private checkAccess() {
+		const allowedUsers = this.env.ALLOWED_GITHUB_USERS?.split(',').map(u => u.trim()) || [];
+
+		if (allowedUsers.length > 0 && !allowedUsers.includes(this.props?.login || '')) {
+			throw new Error(`Access denied. User ${this.props?.login} is not authorized.`);
+		}
+	}
+
 	private getApiKey() {
+		this.checkAccess();
 		const apiKey = this.env.LINEAR_API_KEY;
 		if (!apiKey) {
 			throw new Error("LINEAR_API_KEY not configured");
@@ -29,6 +47,7 @@ export class LinearLiteMCP extends McpAgent<Env> {
 	}
 
 	private getGeminiApiKey() {
+		this.checkAccess();
 		return this.env.GEMINI_API_KEY;
 	}
 
@@ -298,14 +317,12 @@ export class LinearLiteMCP extends McpAgent<Env> {
 	}
 }
 
-export default {
-	fetch(request: Request, env: Env, ctx: ExecutionContext) {
-		const url = new URL(request.url);
-
-		if (url.pathname === "/mcp") {
-			return LinearLiteMCP.serve("/mcp").fetch(request, env, ctx);
-		}
-
-		return new Response("Not found", { status: 404 });
+export default new OAuthProvider({
+	apiHandlers: {
+		"/mcp": LinearLiteMCP.serve("/mcp"),
 	},
-};
+	authorizeEndpoint: "/authorize",
+	clientRegistrationEndpoint: "/register",
+	defaultHandler: GitHubHandler as any,
+	tokenEndpoint: "/token",
+});
