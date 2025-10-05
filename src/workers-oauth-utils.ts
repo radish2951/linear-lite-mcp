@@ -4,39 +4,77 @@ import type { AuthRequest, ClientInfo } from "@cloudflare/workers-oauth-provider
 
 const COOKIE_NAME = "mcp-approved-clients";
 const ONE_YEAR_IN_SECONDS = 31536000;
+const STATE_SEPARATOR = ".";
 
 // --- Helper Functions ---
 
 /**
- * Encodes arbitrary data to a URL-safe base64 string.
- * @param data - The data to encode (will be stringified).
- * @returns A URL-safe base64 encoded string.
+ * Serializes and signs arbitrary data so it can be safely transported in the browser.
+ * @param payload - JSON-serializable payload to sign.
+ * @param secret - HMAC secret.
+ * @returns Serialized "signature.base64(payload)" string.
  */
-function _encodeState(data: any): string {
+export async function createSignedState(payload: unknown, secret: string): Promise<string> {
+	const jsonString = JSON.stringify(payload);
+	const key = await importKey(secret);
+	const signature = await signData(key, jsonString);
+	return `${signature}${STATE_SEPARATOR}${btoa(jsonString)}`;
+}
+
+/**
+ * Validates and deserializes state data produced by {@link createSignedState}.
+ * @param signedState - The signed state string.
+ * @param secret - HMAC secret.
+ * @returns The decoded payload when valid, otherwise null.
+ */
+export async function parseSignedState<T = unknown>(
+	signedState: string,
+	secret: string,
+): Promise<T | null> {
+	if (!signedState) {
+		return null;
+	}
+
+	const parts = signedState.split(STATE_SEPARATOR);
+	if (parts.length !== 2) {
+		console.warn("Signed state has unexpected format.");
+		return null;
+	}
+
+	const [signatureHex, base64Payload] = parts;
+
+	let payloadJson: string;
 	try {
-		const jsonString = JSON.stringify(data);
-		// Use btoa for simplicity, assuming Worker environment supports it well enough
-		// For complex binary data, a Buffer/Uint8Array approach might be better
-		return btoa(jsonString);
-	} catch (e) {
-		console.error("Error encoding state:", e);
-		throw new Error("Could not encode state");
+		payloadJson = atob(base64Payload);
+	} catch (error) {
+		console.error("Failed to decode state payload:", error);
+		return null;
+	}
+
+	const key = await importKey(secret);
+	const isValid = await verifySignature(key, signatureHex, payloadJson);
+	if (!isValid) {
+		console.warn("Signed state verification failed.");
+		return null;
+	}
+
+	try {
+		return JSON.parse(payloadJson) as T;
+	} catch (error) {
+		console.error("Failed to parse state payload:", error);
+		return null;
 	}
 }
 
 /**
- * Decodes a URL-safe base64 string back to its original data.
- * @param encoded - The URL-safe base64 encoded string.
- * @returns The original data.
+ * Generates a cryptographically random nonce string.
  */
-function decodeState<T = any>(encoded: string): T {
-	try {
-		const jsonString = atob(encoded);
-		return JSON.parse(jsonString);
-	} catch (e) {
-		console.error("Error decoding state:", e);
-		throw new Error("Could not decode state");
-	}
+export function generateNonce(byteLength = 32): string {
+	const buffer = new Uint8Array(byteLength);
+	crypto.getRandomValues(buffer);
+	return Array.from(buffer)
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
 }
 
 /**
@@ -195,10 +233,9 @@ export interface ApprovalDialogOptions {
 		description?: string;
 	};
 	/**
-	 * Arbitrary state data to pass through the approval flow
-	 * Will be encoded in the form and returned when approval is complete
+	 * Signed state payload to pass through the approval flow.
 	 */
-	state: Record<string, any>;
+	state: string;
 	/**
 	 * Name of the cookie to use for storing approvals
 	 * @default "mcp_approved_clients"
@@ -238,9 +275,6 @@ export interface ApprovalDialogOptions {
  */
 export function renderApprovalDialog(request: Request, options: ApprovalDialogOptions): Response {
 	const { client, server, state } = options;
-
-	// Encode state for form submission
-	const encodedState = btoa(JSON.stringify(state));
 
 	// Sanitize any untrusted content
 	const serverName = sanitizeHtml(server.name);
@@ -543,7 +577,7 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
             <p>This MCP Client is requesting to be authorized on ${serverName}. If you approve, you will be redirected to complete authentication.</p>
             
             <form method="post" action="${new URL(request.url).pathname}">
-              <input type="hidden" name="state" value="${encodedState}">
+              <input type="hidden" name="state" value="${sanitizeHtml(state)}">
               
               <div class="actions">
                 <button type="button" class="button button-secondary" onclick="window.history.back()">Cancel</button>
@@ -566,9 +600,13 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
 /**
  * Result of parsing the approval form submission.
  */
+interface ApprovalState {
+	oauthReqInfo?: AuthRequest;
+}
+
 export interface ParsedApprovalResult {
 	/** The original state object passed through the form. */
-	state: any;
+	state: ApprovalState;
 	/** Headers to set on the redirect response, including the Set-Cookie header. */
 	headers: Record<string, string>;
 }
@@ -590,7 +628,7 @@ export async function parseRedirectApproval(
 		throw new Error("Invalid request method. Expected POST.");
 	}
 
-	let state: any;
+	let state: ApprovalState | null = null;
 	let clientId: string | undefined;
 
 	try {
@@ -601,7 +639,10 @@ export async function parseRedirectApproval(
 			throw new Error("Missing or invalid 'state' in form data.");
 		}
 
-		state = decodeState<{ oauthReqInfo?: AuthRequest }>(encodedState); // Decode the state
+		state = await parseSignedState<ApprovalState>(encodedState, cookieSecret); // Decode the state
+		if (!state) {
+			throw new Error("Signed state could not be verified.");
+		}
 		clientId = state?.oauthReqInfo?.clientId; // Extract clientId from within the state
 
 		if (!clientId) {
