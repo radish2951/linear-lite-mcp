@@ -107,7 +107,7 @@ app.get("/callback", async (c) => {
 	}
 
 	const nonceCookie = getCookie(c.req.raw.headers.get("Cookie"), OAUTH_STATE_COOKIE);
-	if (!nonceCookie || nonceCookie !== parsedState.nonce) {
+	if (!nonceCookie || !parsedState.nonce || !timingSafeEqual(nonceCookie, parsedState.nonce)) {
 		return buildErrorResponse("State verification failed", 400, true);
 	}
 
@@ -194,6 +194,20 @@ function getCookie(cookieHeader: string | null, name: string): string | null {
 	const cookies = cookieHeader.split(";").map((part) => part.trim());
 	const match = cookies.find((cookie) => cookie.startsWith(`${name}=`));
 	return match ? match.substring(name.length + 1) : null;
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+	const encoder = new TextEncoder();
+	const aBytes = encoder.encode(a);
+	const bBytes = encoder.encode(b);
+	if (aBytes.length !== bBytes.length) {
+		return false;
+	}
+	let diff = 0;
+	for (let i = 0; i < aBytes.length; i += 1) {
+		diff |= aBytes[i] ^ bBytes[i];
+	}
+	return diff === 0;
 }
 
 function resolveCallbackUrl(request: Request, env: Env): string {

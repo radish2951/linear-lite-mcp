@@ -25,6 +25,16 @@ async function executeQuery<T>(
 
 	if (!response.ok) {
 		const errorText = await response.text();
+
+		// Handle rate limiting with Retry-After header
+		if (response.status === 429) {
+			const retryAfter = response.headers.get("Retry-After");
+			const waitTime = retryAfter ? `${retryAfter} seconds` : "a while";
+			throw new Error(
+				`Linear API rate limit exceeded. Please retry after ${waitTime}.`,
+			);
+		}
+
 		throw new Error(
 			`Linear API error: ${response.status} ${response.statusText}\nResponse: ${errorText}`,
 		);
@@ -234,13 +244,19 @@ export async function getIssue(
 
 	// Generate summary if Gemini API key is provided and summarizeByGemini is enabled
 	if (geminiApiKey && summarizeByGemini) {
-		const comments = await getIssueComments(apiKey, identifier);
-		const summary = await generateIssueSummary(geminiApiKey, issue, comments);
+		try {
+			const comments = await getIssueComments(apiKey, identifier);
+			const summary = await generateIssueSummary(geminiApiKey, issue, comments);
 
-		// Return only summary when using AI
-		return {
-			summary_by_gemini: summary,
-		};
+			// Return only summary when using AI
+			return {
+				summary_by_gemini: summary,
+			};
+		} catch (error) {
+			console.error("Gemini API failed, returning raw issue data:", error);
+			// Fallback to raw data if Gemini fails
+			return issue;
+		}
 	}
 
 	return issue;
@@ -922,6 +938,11 @@ export async function getWorkspaceOverview(apiKey: string): Promise<WorkspaceOve
               name
             }
           }
+          labels {
+            nodes {
+              name
+            }
+          }
           projects {
             nodes {
               name
@@ -956,6 +977,7 @@ export async function getWorkspaceOverview(apiKey: string): Promise<WorkspaceOve
 				name: string;
 				key: string;
 				states: { nodes: Array<{ name: string }> };
+				labels: { nodes: Array<{ name: string }> };
 				projects: { nodes: Array<{ name: string; state: string }> };
 			}>;
 		};
@@ -973,22 +995,17 @@ export async function getWorkspaceOverview(apiKey: string): Promise<WorkspaceOve
 		};
 	}>(query, {}, apiKey);
 
-	// Fetch team-specific labels separately
-	const teamsWithLabels = await Promise.all(
-		data.teams.nodes.map(async (team) => {
-			const teamLabels = await listLabels(apiKey, team.id);
-			return {
-				id: team.id,
-				name: team.name,
-				key: team.key,
-				states: team.states.nodes.map((s) => s.name),
-				labels: teamLabels.map((l) => l.name),
-				projects: team.projects.nodes
-					.filter((p) => p.state !== "completed" && p.state !== "canceled")
-					.map((p) => p.name),
-			};
-		}),
-	);
+	// Map teams with labels directly from the query result (no N+1)
+	const teamsWithLabels = data.teams.nodes.map((team) => ({
+		id: team.id,
+		name: team.name,
+		key: team.key,
+		states: team.states.nodes.map((s) => s.name),
+		labels: team.labels.nodes.map((l) => l.name),
+		projects: team.projects.nodes
+			.filter((p) => p.state !== "completed" && p.state !== "canceled")
+			.map((p) => p.name),
+	}));
 
 	return {
 		teams: teamsWithLabels,

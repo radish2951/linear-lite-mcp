@@ -68,7 +68,9 @@ export async function fetchUpstreamAuthToken({
 		method: "POST",
 	});
 	if (!resp.ok) {
-		console.log(await resp.text());
+		const errorText = await resp.text();
+		// Log only first 200 chars to avoid leaking tokens
+		console.error("Token fetch failed:", errorText.substring(0, 200));
 		return [null, new Response("Failed to fetch access token", { status: 500 })];
 	}
 	const body = await resp.formData();
