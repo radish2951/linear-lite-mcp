@@ -23,11 +23,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify Wrangler authentication
-        run: npx wrangler whoami
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
