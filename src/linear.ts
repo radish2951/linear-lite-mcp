@@ -84,7 +84,8 @@ export async function searchIssues(
 	// Build filter object
 	const filterObj: Record<string, unknown> = {};
 	if (filter?.teamId) filterObj.team = { id: { eq: filter.teamId } };
-	if (filter?.assigneeId) filterObj.assignee = { id: { eq: filter.assigneeId } };
+	if (filter?.assigneeId)
+		filterObj.assignee = { id: { eq: filter.assigneeId } };
 	if (filter?.state) filterObj.state = { name: { eq: filter.state } };
 	if (filter?.priority) filterObj.priority = { eq: filter.priority };
 	if (filter?.updatedAt) filterObj.updatedAt = { gte: filter.updatedAt };
@@ -284,7 +285,11 @@ export async function listTeams(apiKey: string): Promise<Team[]> {
     }
   `;
 
-	const data = await executeQuery<{ teams: { nodes: Team[] } }>(query, {}, apiKey);
+	const data = await executeQuery<{ teams: { nodes: Team[] } }>(
+		query,
+		{},
+		apiKey,
+	);
 
 	return data.teams.nodes;
 }
@@ -298,7 +303,10 @@ export interface State {
 	type: string;
 }
 
-export async function listStates(apiKey: string, teamId: string): Promise<State[]> {
+export async function listStates(
+	apiKey: string,
+	teamId: string,
+): Promise<State[]> {
 	const query = `
     query ListStates($teamId: String!) {
       team(id: $teamId) {
@@ -334,6 +342,7 @@ export interface CreateIssueInput {
 	labelIds?: string[];
 	projectId?: string;
 	stateId?: string;
+	dueDate?: string;
 }
 
 export interface CreateIssueResult {
@@ -391,6 +400,7 @@ export interface UpdateIssueInput {
 	labelIds?: string[];
 	projectId?: string;
 	stateId?: string;
+	dueDate?: string;
 }
 
 export interface UpdateIssueResult {
@@ -462,13 +472,14 @@ async function resolveNamesToIds(
 	input: NameResolutionInput,
 ): Promise<NameResolutionResult> {
 	// Fetch all resources in parallel
-	const [users, states, teamLabels, workspaceLabels, projects] = await Promise.all([
-		input.assigneeName ? listUsers(apiKey) : Promise.resolve([]),
-		input.stateName ? listStates(apiKey, teamId) : Promise.resolve([]),
-		input.labelNames ? listLabels(apiKey, teamId) : Promise.resolve([]),
-		input.labelNames ? listLabels(apiKey) : Promise.resolve([]),
-		input.projectName ? listProjects(apiKey, teamId) : Promise.resolve([]),
-	]);
+	const [users, states, teamLabels, workspaceLabels, projects] =
+		await Promise.all([
+			input.assigneeName ? listUsers(apiKey) : Promise.resolve([]),
+			input.stateName ? listStates(apiKey, teamId) : Promise.resolve([]),
+			input.labelNames ? listLabels(apiKey, teamId) : Promise.resolve([]),
+			input.labelNames ? listLabels(apiKey) : Promise.resolve([]),
+			input.projectName ? listProjects(apiKey, teamId) : Promise.resolve([]),
+		]);
 
 	const result: NameResolutionResult = {};
 
@@ -485,7 +496,9 @@ async function resolveNamesToIds(
 	if (input.stateName) {
 		const state = states.find((s) => s.name === input.stateName);
 		if (!state) {
-			throw new Error(`State not found in team ${teamName}: ${input.stateName}`);
+			throw new Error(
+				`State not found in team ${teamName}: ${input.stateName}`,
+			);
 		}
 		result.stateId = state.id;
 	}
@@ -507,7 +520,9 @@ async function resolveNamesToIds(
 	if (input.projectName) {
 		const project = projects.find((p) => p.name === input.projectName);
 		if (!project) {
-			throw new Error(`Project not found in team ${teamName}: ${input.projectName}`);
+			throw new Error(
+				`Project not found in team ${teamName}: ${input.projectName}`,
+			);
 		}
 		result.projectId = project.id;
 	}
@@ -527,6 +542,7 @@ export interface CreateIssueByNameInput {
 	labelNames?: string[];
 	projectName?: string;
 	stateName?: string;
+	dueDate?: string;
 }
 
 export async function createIssueByName(
@@ -549,6 +565,7 @@ export async function createIssueByName(
 		title: input.title,
 		description: input.description,
 		priority: input.priority,
+		dueDate: input.dueDate,
 		...resolved,
 	});
 }
@@ -565,6 +582,7 @@ export interface UpdateIssueByNameInput {
 	labelNames?: string[];
 	projectName?: string;
 	stateName?: string;
+	dueDate?: string;
 }
 
 export async function updateIssueByName(
@@ -572,7 +590,7 @@ export async function updateIssueByName(
 	input: UpdateIssueByNameInput,
 ): Promise<UpdateIssueResult> {
 	// 1. Extract team from identifier (format: TEAM-123) and get issue ID
-	const teamKey = input.identifier.split('-')[0];
+	const teamKey = input.identifier.split("-")[0];
 	const teams = await listTeams(apiKey);
 	const team = teams.find((t) => t.key === teamKey);
 	if (!team) {
@@ -601,6 +619,7 @@ export async function updateIssueByName(
 		title: input.title,
 		description: input.description,
 		priority: input.priority,
+		dueDate: input.dueDate,
 		...resolved,
 	});
 }
@@ -627,7 +646,11 @@ export async function listUsers(apiKey: string): Promise<User[]> {
     }
   `;
 
-	const data = await executeQuery<{ users: { nodes: User[] } }>(query, {}, apiKey);
+	const data = await executeQuery<{ users: { nodes: User[] } }>(
+		query,
+		{},
+		apiKey,
+	);
 
 	return data.users.nodes;
 }
@@ -641,7 +664,10 @@ export interface Label {
 	color: string;
 }
 
-export async function listLabels(apiKey: string, teamId?: string): Promise<Label[]> {
+export async function listLabels(
+	apiKey: string,
+	teamId?: string,
+): Promise<Label[]> {
 	const query = `
     query ListLabels($filter: IssueLabelFilter) {
       issueLabels(filter: $filter) {
@@ -695,16 +721,16 @@ export async function listProjects(
       }
     `;
 
-		const data = await executeQuery<{ team: { projects: { nodes: Project[] } } }>(
-			query,
-			{ teamId },
-			apiKey,
-		);
+		const data = await executeQuery<{
+			team: { projects: { nodes: Project[] } };
+		}>(query, { teamId }, apiKey);
 
 		const projects = data.team.projects.nodes;
 		return includeCompleted
 			? projects
-			: projects.filter((p) => p.state !== "completed" && p.state !== "canceled");
+			: projects.filter(
+					(p) => p.state !== "completed" && p.state !== "canceled",
+				);
 	} else {
 		// Get all workspace projects
 		const query = `
@@ -724,7 +750,11 @@ export async function listProjects(
 			filter.state = { nin: ["completed", "canceled"] };
 		}
 
-		const data = await executeQuery<{ projects: { nodes: Project[] } }>(query, { filter }, apiKey);
+		const data = await executeQuery<{ projects: { nodes: Project[] } }>(
+			query,
+			{ filter },
+			apiKey,
+		);
 
 		return data.projects.nodes;
 	}
@@ -925,7 +955,9 @@ export interface WorkspaceOverview {
 	}>;
 }
 
-export async function getWorkspaceOverview(apiKey: string): Promise<WorkspaceOverview> {
+export async function getWorkspaceOverview(
+	apiKey: string,
+): Promise<WorkspaceOverview> {
 	const query = `
     query GetWorkspaceOverview {
       teams {

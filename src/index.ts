@@ -76,6 +76,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 					text: `Error: ${error instanceof Error ? error.message : String(error)}`,
 				},
 			],
+			isError: true,
 		};
 	}
 
@@ -199,6 +200,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				labelNames: z.array(z.string()).optional(),
 				projectName: z.string().optional(),
 				stateName: z.string().optional(),
+				dueDate: z.string().optional(),
 			},
 			async ({
 				teamName,
@@ -209,6 +211,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				labelNames,
 				projectName,
 				stateName,
+				dueDate,
 			}) => {
 				try {
 					const apiKey = this.getApiKey();
@@ -221,6 +224,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						labelNames,
 						projectName,
 						stateName,
+						dueDate,
 					});
 
 					const cleanedResult = {
@@ -255,6 +259,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				labelNames: z.array(z.string()).optional(),
 				projectName: z.string().optional(),
 				stateName: z.string().optional(),
+				dueDate: z.string().optional(),
 			},
 			async ({
 				identifier,
@@ -265,6 +270,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				labelNames,
 				projectName,
 				stateName,
+				dueDate,
 			}) => {
 				try {
 					const apiKey = this.getApiKey();
@@ -277,6 +283,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						labelNames,
 						projectName,
 						stateName,
+						dueDate,
 					});
 
 					return {
