@@ -10,6 +10,7 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "linear-lite-mcp",
 	"main": "src/index.ts",
+	"account_id": "24a69296963772a76553025682611c6a",
 	"compatibility_date": "2025-03-10",
 	"compatibility_flags": [
 		"nodejs_compat"
