@@ -14,11 +14,15 @@ async function executeQuery<T>(
 	variables: Record<string, unknown>,
 	apiKey: string,
 ): Promise<T> {
+	const authorizationHeader = apiKey.startsWith("Bearer ")
+		? apiKey
+		: `Bearer ${apiKey}`;
+
 	const response = await fetch(LINEAR_API_URL, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			Authorization: apiKey,
+			Authorization: authorizationHeader,
 		},
 		body: JSON.stringify({ query, variables }),
 	});
@@ -88,7 +92,9 @@ export async function listIssues(
 	if (filter?.assigneeId)
 		filterObj.assignee = { id: { eq: filter.assigneeId } };
 	if (filter?.state) filterObj.state = { name: { eq: filter.state } };
-	if (filter?.priority) filterObj.priority = { eq: filter.priority };
+	if (filter?.priority !== undefined) {
+		filterObj.priority = { eq: filter.priority };
+	}
 	if (filter?.updatedAt) filterObj.updatedAt = { gte: filter.updatedAt };
 
 	// Exclude completed, canceled, and backlog by default
