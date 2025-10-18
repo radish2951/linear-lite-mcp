@@ -68,7 +68,7 @@ export interface Issue {
 	summary_by_gemini?: string | null;
 }
 
-export async function searchIssues(
+export async function listIssues(
 	apiKey: string,
 	query?: string,
 	filter?: {
@@ -77,6 +77,7 @@ export async function searchIssues(
 		state?: string;
 		priority?: number;
 		includeCompleted?: boolean;
+		includeBacklog?: boolean;
 		updatedAt?: string;
 	},
 	first = 25,
@@ -90,11 +91,19 @@ export async function searchIssues(
 	if (filter?.priority) filterObj.priority = { eq: filter.priority };
 	if (filter?.updatedAt) filterObj.updatedAt = { gte: filter.updatedAt };
 
-	// Exclude completed and canceled by default
+	// Exclude completed, canceled, and backlog by default
+	const excludedTypes: string[] = [];
 	if (!filter?.includeCompleted) {
+		excludedTypes.push("completed", "canceled");
+	}
+	if (!filter?.includeBacklog) {
+		excludedTypes.push("backlog");
+	}
+
+	if (excludedTypes.length > 0) {
 		filterObj.state = {
 			...(typeof filterObj.state === "object" ? filterObj.state : {}),
-			type: { nin: ["completed", "canceled"] },
+			type: { nin: excludedTypes },
 		};
 	}
 
@@ -936,7 +945,7 @@ export async function updateComment(
 }
 
 /**
- * Get workspace overview - all teams, users, labels, states, and projects
+ * Get workspace overview - all teams, users, labels, states, projects, and active issues
  */
 export interface WorkspaceOverview {
 	teams: Array<{
@@ -953,6 +962,7 @@ export interface WorkspaceOverview {
 		id: string;
 		name: string;
 	}>;
+	activeIssues: Issue[];
 }
 
 export async function getWorkspaceOverview(
@@ -1027,6 +1037,17 @@ export async function getWorkspaceOverview(
 		};
 	}>(query, {}, apiKey);
 
+	// Get active issues using the existing listIssues function
+	const activeIssuesRaw = await listIssues(
+		apiKey,
+		undefined,
+		{
+			includeCompleted: false,
+			includeBacklog: false,
+		},
+		50,
+	);
+
 	// Map teams with labels directly from the query result (no N+1)
 	const teamsWithLabels = data.teams.nodes.map((team) => ({
 		id: team.id,
@@ -1044,5 +1065,6 @@ export async function getWorkspaceOverview(
 		workspaceLabels: data.issueLabels.nodes.map((l) => l.name),
 		initiatives: data.initiatives.nodes.map((i) => i.name),
 		users: data.users.nodes,
+		activeIssues: activeIssuesRaw,
 	};
 }

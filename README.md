@@ -13,11 +13,13 @@ A **lightweight** Linear MCP server on Cloudflare Workers. This implementation u
 
 > **Note**: Tool inputs accept human-readable names instead of IDs. The server resolves them to Linear IDs at runtime, so duplicate team/user/label names may lead to ambiguous matches—keep names unique for reliable results.
 
-### `issues_search`
-Search issues with minimal payload. Returns only essential fields:
+### `issues_list`
+List issues with minimal payload. Returns only essential fields:
 - `identifier`, `title`, `state`, `priority`
 - `projectName` (flattened)
 - `dueDate`
+
+**Default behavior**: Excludes both completed/canceled and backlog issues.
 
 **Parameters**:
 - `query` (optional): Freetext search across title and description
@@ -27,6 +29,7 @@ Search issues with minimal payload. Returns only essential fields:
 - `priority` (optional): Filter by priority (0-4)
 - `limit` (optional): Number of results (1-100, default: 25)
 - `includeCompleted` (optional): Include completed/canceled issues (default: false)
+- `includeBacklog` (optional): Include backlog issues (default: false)
 - `updatedAt` (optional): Filter by update time using ISO 8601 duration format (e.g., "-P1D" for last 24 hours, "-P7D" for last week)
 
 ### `issue_get`
@@ -51,6 +54,7 @@ Fetch workspace metadata in a single call. Returns:
 - Teams with keys, states, labels, and active projects
 - Workspace-level labels and initiatives
 - Active users (without IDs to keep payload small)
+- **Active issues**: Up to 50 most recently updated issues (excludes completed, canceled, and backlog)
 
 **Parameters**: _None_
 

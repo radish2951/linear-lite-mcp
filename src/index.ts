@@ -11,7 +11,7 @@ type Props = {
 	accessToken: string;
 };
 import {
-	searchIssues,
+	listIssues,
 	getIssue,
 	createIssueByName,
 	updateIssueByName,
@@ -60,9 +60,9 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	}
 
 	async init() {
-		// Search issues with minimal payload
+		// List issues with minimal payload
 		this.server.tool(
-			"issues_search",
+			"issues_list",
 			{
 				query: z.string().optional(),
 				teamName: z.string().optional(),
@@ -71,6 +71,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				priority: z.number().int().min(0).max(4).optional(),
 				limit: z.number().min(1).max(100).default(25),
 				includeCompleted: z.boolean().default(false),
+				includeBacklog: z.boolean().default(false),
 				updatedAt: z.string().optional(),
 			},
 			async ({
@@ -81,6 +82,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				priority,
 				limit,
 				includeCompleted,
+				includeBacklog,
 				updatedAt,
 			}) => {
 				try {
@@ -108,7 +110,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						assigneeId = user.id;
 					}
 
-					const issues = await searchIssues(
+					const issues = await listIssues(
 						apiKey,
 						query,
 						{
@@ -117,6 +119,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 							state,
 							priority,
 							includeCompleted,
+							includeBacklog,
 							updatedAt,
 						},
 						limit,
@@ -167,6 +170,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 					workspaceLabels: overview.workspaceLabels,
 					initiatives: overview.initiatives,
 					users: overview.users.map(({ id, ...user }) => user),
+				activeIssues: overview.activeIssues,
 				};
 
 				return {
