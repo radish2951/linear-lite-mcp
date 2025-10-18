@@ -215,7 +215,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						title,
 						description,
 						priority,
-						assigneeName,
+						assigneeName: assigneeName || this.props?.name,
 						labelNames,
 						projectName,
 						stateName,
