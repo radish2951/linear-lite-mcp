@@ -1,7 +1,8 @@
-import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+import type {
+	AuthRequest,
+	OAuthHelpers,
+} from "@cloudflare/workers-oauth-provider";
 import { Hono } from "hono";
-import { Octokit } from "octokit";
-import { fetchUpstreamAuthToken, getUpstreamAuthorizeUrl, type Props } from "./utils";
 import {
 	clientIdAlreadyApproved,
 	createSignedState,
@@ -24,23 +25,30 @@ app.get("/authorize", async (c) => {
 	}
 
 	if (
-		await clientIdAlreadyApproved(c.req.raw, oauthReqInfo.clientId, c.env.COOKIE_ENCRYPTION_KEY)
+		await clientIdAlreadyApproved(
+			c.req.raw,
+			oauthReqInfo.clientId,
+			c.env.COOKIE_ENCRYPTION_KEY,
+		)
 	) {
 		try {
-			return await redirectToGithub(c.req.raw, oauthReqInfo, c.env);
+			return await redirectToLinear(c.req.raw, oauthReqInfo, c.env);
 		} catch (error) {
-			console.error("Failed to initiate GitHub OAuth redirect:", error);
+			console.error("Failed to initiate Linear OAuth redirect:", error);
 			return c.text("Unable to initiate authorization", 400);
 		}
 	}
 
-	const approvalState = await createSignedState({ oauthReqInfo }, c.env.COOKIE_ENCRYPTION_KEY);
+	const approvalState = await createSignedState(
+		{ oauthReqInfo },
+		c.env.COOKIE_ENCRYPTION_KEY,
+	);
 
 	return renderApprovalDialog(c.req.raw, {
 		client: await c.env.OAUTH_PROVIDER.lookupClient(clientId),
 		server: {
-			description: "Linear Lite MCP Server with GitHub OAuth authentication",
-			logo: "https://avatars.githubusercontent.com/u/314135?s=200&v=4",
+			description: "Linear Lite MCP Server - Access your Linear workspace",
+			logo: "https://linear.app/favicon.ico",
 			name: "Linear Lite MCP Server",
 		},
 		state: approvalState,
@@ -48,41 +56,49 @@ app.get("/authorize", async (c) => {
 });
 
 app.post("/authorize", async (c) => {
-	const { state, headers } = await parseRedirectApproval(c.req.raw, c.env.COOKIE_ENCRYPTION_KEY);
+	const { state, headers } = await parseRedirectApproval(
+		c.req.raw,
+		c.env.COOKIE_ENCRYPTION_KEY,
+	);
 	if (!state.oauthReqInfo) {
 		return c.text("Invalid request", 400);
 	}
 
 	try {
-		return await redirectToGithub(c.req.raw, state.oauthReqInfo, c.env, headers);
+		return await redirectToLinear(
+			c.req.raw,
+			state.oauthReqInfo,
+			c.env,
+			headers,
+		);
 	} catch (error) {
-		console.error("Failed to initiate GitHub OAuth redirect:", error);
+		console.error("Failed to initiate Linear OAuth redirect:", error);
 		return c.text("Unable to initiate authorization", 400);
 	}
 });
 
-async function redirectToGithub(
+async function redirectToLinear(
 	request: Request,
 	oauthReqInfo: AuthRequest,
 	env: Env,
 	headers: Record<string, string> = {},
 ): Promise<Response> {
 	const nonce = generateNonce();
-	const signedState = await createSignedState({ oauthReqInfo, nonce }, env.COOKIE_ENCRYPTION_KEY);
+	const signedState = await createSignedState(
+		{ oauthReqInfo, nonce },
+		env.COOKIE_ENCRYPTION_KEY,
+	);
 	const callbackUrl = resolveCallbackUrl(request, env);
 	const responseHeaders = new Headers(headers);
 
-	responseHeaders.set(
-		"location",
-		getUpstreamAuthorizeUrl({
-			client_id: env.GITHUB_CLIENT_ID,
-			redirect_uri: callbackUrl,
-			scope: "read:user",
-			state: signedState,
-			upstream_url: "https://github.com/login/oauth/authorize",
-		}),
-	);
+	const authorizeUrl = new URL("https://linear.app/oauth/authorize");
+	authorizeUrl.searchParams.set("client_id", env.LINEAR_OAUTH_CLIENT_ID);
+	authorizeUrl.searchParams.set("redirect_uri", callbackUrl);
+	authorizeUrl.searchParams.set("response_type", "code");
+	authorizeUrl.searchParams.set("scope", "read,write");
+	authorizeUrl.searchParams.set("state", signedState);
 
+	responseHeaders.set("location", authorizeUrl.toString());
 	appendOAuthStateCookie(responseHeaders, nonce);
 
 	return new Response(null, {
@@ -106,8 +122,15 @@ app.get("/callback", async (c) => {
 		return buildErrorResponse("Invalid state", 400, true);
 	}
 
-	const nonceCookie = getCookie(c.req.raw.headers.get("Cookie"), OAUTH_STATE_COOKIE);
-	if (!nonceCookie || !parsedState.nonce || !timingSafeEqual(nonceCookie, parsedState.nonce)) {
+	const nonceCookie = getCookie(
+		c.req.raw.headers.get("Cookie"),
+		OAUTH_STATE_COOKIE,
+	);
+	if (
+		!nonceCookie ||
+		!parsedState.nonce ||
+		!timingSafeEqual(nonceCookie, parsedState.nonce)
+	) {
 		return buildErrorResponse("State verification failed", 400, true);
 	}
 
@@ -119,40 +142,82 @@ app.get("/callback", async (c) => {
 		return buildErrorResponse("Invalid callback host", 400, true);
 	}
 
-	const [accessToken, errResponse] = await fetchUpstreamAuthToken({
-		client_id: c.env.GITHUB_CLIENT_ID,
-		client_secret: c.env.GITHUB_CLIENT_SECRET,
-		code: c.req.query("code"),
-		redirect_uri: callbackUrl,
-		upstream_url: "https://github.com/login/oauth/access_token",
-	});
-	if (errResponse) {
-		const body = await errResponse.text();
-		const headers = new Headers(errResponse.headers);
-		if (!headers.has("content-type")) {
-			headers.set("content-type", "text/plain; charset=utf-8");
-		}
-		clearOAuthStateCookie(headers);
-		return new Response(body, { status: errResponse.status, headers });
+	const code = c.req.query("code");
+	if (!code) {
+		return buildErrorResponse("Missing authorization code", 400, true);
 	}
 
-	const user = await new Octokit({ auth: accessToken }).rest.users.getAuthenticated();
-	const { login, name, email } = user.data;
+	// Exchange code for Linear access token
+	const tokenResponse = await fetch("https://api.linear.app/oauth/token", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/x-www-form-urlencoded",
+		},
+		body: new URLSearchParams({
+			grant_type: "authorization_code",
+			client_id: c.env.LINEAR_OAUTH_CLIENT_ID,
+			client_secret: c.env.LINEAR_OAUTH_CLIENT_SECRET,
+			redirect_uri: callbackUrl,
+			code,
+		}),
+	});
+
+	if (!tokenResponse.ok) {
+		const errorBody = await tokenResponse.text();
+		console.error("Linear token exchange failed:", errorBody);
+		const headers = new Headers();
+		headers.set("content-type", "text/plain; charset=utf-8");
+		clearOAuthStateCookie(headers);
+		return new Response(`Failed to obtain Linear access token: ${errorBody}`, {
+			status: tokenResponse.status,
+			headers,
+		});
+	}
+
+	const tokenData = await tokenResponse.json<{ access_token: string }>();
+	const accessToken = tokenData.access_token;
+
+	// Fetch user info from Linear
+	const userResponse = await fetch("https://api.linear.app/graphql", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${accessToken}`,
+		},
+		body: JSON.stringify({
+			query: "{ viewer { id name email } }",
+		}),
+	});
+
+	if (!userResponse.ok) {
+		const errorBody = await userResponse.text();
+		console.error("Failed to fetch Linear user info:", errorBody);
+		return buildErrorResponse(
+			"Failed to fetch user information from Linear",
+			400,
+			true,
+		);
+	}
+
+	const userData = await userResponse.json<{
+		data: { viewer: { id: string; name: string; email: string } };
+	}>();
+
+	const { id: userId, name, email } = userData.data.viewer;
 
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
 		metadata: {
 			label: name,
 		},
 		props: {
-			authType: "github",
-			accessToken,
-			email,
-			login,
+			userId,
 			name,
-		} as Props,
+			email,
+			accessToken,
+		},
 		request: parsedState.oauthReqInfo,
 		scope: parsedState.oauthReqInfo.scope,
-		userId: login,
+		userId,
 	});
 
 	const headers = new Headers();
@@ -162,7 +227,7 @@ app.get("/callback", async (c) => {
 	return new Response(null, { status: 302, headers });
 });
 
-export { app as GitHubHandler };
+export { app as LinearOAuthHandler };
 
 function appendOAuthStateCookie(headers: Headers, nonce: string) {
 	headers.append(
@@ -178,7 +243,11 @@ function clearOAuthStateCookie(headers: Headers) {
 	);
 }
 
-function buildErrorResponse(message: string, status: number, clearState = false): Response {
+function buildErrorResponse(
+	message: string,
+	status: number,
+	clearState = false,
+): Response {
 	const headers = new Headers({ "content-type": "text/plain; charset=utf-8" });
 	if (clearState) {
 		clearOAuthStateCookie(headers);
@@ -220,11 +289,16 @@ function resolveCallbackUrl(request: Request, env: Env): string {
 
 	const allowedHostsRaw = envRecord.ALLOWED_CALLBACK_HOSTS;
 	const allowedHosts = allowedHostsRaw
-		? allowedHostsRaw.split(",").map((host) => host.trim()).filter(Boolean)
+		? allowedHostsRaw
+				.split(",")
+				.map((host) => host.trim())
+				.filter(Boolean)
 		: [];
 	const incomingUrl = new URL(request.url);
 	if (allowedHosts.length > 0 && !allowedHosts.includes(incomingUrl.host)) {
-		throw new Error(`Host ${incomingUrl.host} is not allowed for OAuth callbacks.`);
+		throw new Error(
+			`Host ${incomingUrl.host} is not allowed for OAuth callbacks.`,
+		);
 	}
 
 	incomingUrl.hash = "";

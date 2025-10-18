@@ -89,29 +89,51 @@ Update an existing issue by human-friendly names. Resolves names to IDs internal
 
 ## Setup
 
-1. **Install dependencies**:
+### 1. Install dependencies
 ```bash
 npm install
 ```
 
-2. **Configure API Keys**:
+### 2. Create a Linear OAuth Application
+
+1. Go to https://linear.app/settings/api/applications
+2. Click "Create new OAuth Application"
+3. Fill in the details:
+   - **Name**: Linear Lite MCP Server (or any name you prefer)
+   - **Callback URLs**: Add your callback URL(s):
+     - For local development: `http://localhost:8787/callback`
+     - For production: `https://your-worker-name.workers.dev/callback`
+4. Save the application
+5. Copy the **Client ID** and **Client Secret** - you'll need these in the next step
+
+### 3. Configure Secrets and Environment Variables
+
 ```bash
-# For local development
+# For local development (.dev.vars)
 cat > .dev.vars << EOF
-LINEAR_API_KEY=lin_api_...
+LINEAR_OAUTH_CLIENT_ID=your_linear_oauth_client_id
+LINEAR_OAUTH_CLIENT_SECRET=your_linear_oauth_client_secret
 GEMINI_API_KEY=your_gemini_api_key_here
+COOKIE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+PUBLIC_BASE_URL=http://localhost:8787
 EOF
 
 # For production deployment
-wrangler secret put LINEAR_API_KEY
+wrangler secret put LINEAR_OAUTH_CLIENT_ID
+wrangler secret put LINEAR_OAUTH_CLIENT_SECRET
 wrangler secret put GEMINI_API_KEY
+wrangler secret put COOKIE_ENCRYPTION_KEY
+# Also set PUBLIC_BASE_URL as an environment variable (not a secret)
+# via the Cloudflare dashboard or wrangler.jsonc
 ```
 
+**Important**: Each user will authenticate with their own Linear account via OAuth. The server does not use a shared API key.
+
 Get your API keys at:
-- Linear API: https://linear.app/settings/api
+- Linear OAuth: https://linear.app/settings/api/applications
 - Gemini API: https://aistudio.google.com/apikey (free tier: 500 requests/day, 250k tokens/min)
 
-3. **Run locally**:
+### 4. Run locally
 ```bash
 npm run dev
 ```
@@ -120,10 +142,12 @@ Server will be available at: `http://localhost:8787/mcp`
 
 > Note: As of MCP protocol version 2024-11-05, the standalone SSE transport is deprecated in favour of Streamable HTTP.<sup>[1](#footnote1)</sup> This server therefore exposes only the Streamable HTTP endpoint at `/mcp`.
 
-4. **Deploy to Cloudflare**:
+### 5. Deploy to Cloudflare
 ```bash
 npm run deploy
 ```
+
+After deployment, don't forget to update your Linear OAuth application's callback URL to include your production URL: `https://your-worker-name.workers.dev/callback`
 
 ## Usage Examples
 
@@ -198,6 +222,26 @@ npm run deploy
 {}
 ```
 
+## Authentication Flow
+
+When you first connect to this MCP server from Claude.ai or Claude Desktop:
+
+1. You'll be redirected to the Linear OAuth authorization page
+2. Log in with your Linear account and grant permissions
+3. You'll be redirected back to the MCP server
+4. The server will store your Linear access token securely
+5. All subsequent Linear API calls will use your own Linear account
+
+**Each user authenticates with their own Linear account**, so you can only access the Linear workspaces and issues you have permission to view.
+
+## Connect to Claude Web (claude.ai)
+
+1. Go to Claude.ai
+2. Click on your profile → Settings → Integrations
+3. Add a new MCP server:
+   - **URL**: `https://your-worker-name.workers.dev/mcp`
+4. Follow the OAuth flow to authenticate with Linear
+
 ## Connect to Claude Desktop
 
 Add to your Claude Desktop config (`~/.config/Claude/claude_desktop_config.json`):
@@ -217,6 +261,8 @@ Add to your Claude Desktop config (`~/.config/Claude/claude_desktop_config.json`
 ```
 
 For production, replace with your deployed URL: `https://your-worker.workers.dev/mcp`
+
+When you first use the server, you'll be prompted to authenticate via OAuth in your browser.
 
 ---
 
@@ -239,10 +285,12 @@ Result: **~70% smaller payloads** for list operations.
 
 ## Implementation Details
 
+- **Authentication**: Linear OAuth 2.0 - each user authenticates with their own Linear account
 - **GraphQL Client**: Minimal `fetch`-based implementation (no Apollo overhead)
 - **Type Safety**: Full TypeScript with Cloudflare Workers bindings
-- **Security**: API key stored in Wrangler Secrets
+- **Security**: OAuth tokens stored securely in Durable Objects session storage
 - **Rate Limiting**: Respects Linear's rate limits automatically
+- **Multi-User**: Supports multiple users, each with their own Linear workspace access
 
 ## Future Enhancements
 

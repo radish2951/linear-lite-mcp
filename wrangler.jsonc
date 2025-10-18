@@ -12,14 +12,10 @@
 	"main": "src/index.ts",
 	"account_id": "24a69296963772a76553025682611c6a",
 	"compatibility_date": "2025-03-10",
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
+	"compatibility_flags": ["nodejs_compat"],
 	"migrations": [
 		{
-			"new_sqlite_classes": [
-				"LinearLiteMCP"
-			],
+			"new_sqlite_classes": ["LinearLiteMCP"],
 			"tag": "v1"
 		}
 	],

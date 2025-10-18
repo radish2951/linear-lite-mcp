@@ -1,6 +1,9 @@
 // workers-oauth-utils.ts
 
-import type { AuthRequest, ClientInfo } from "@cloudflare/workers-oauth-provider"; // Adjust path if necessary
+import type {
+	AuthRequest,
+	ClientInfo,
+} from "@cloudflare/workers-oauth-provider"; // Adjust path if necessary
 
 const COOKIE_NAME = "mcp-approved-clients";
 const ONE_YEAR_IN_SECONDS = 31536000;
@@ -14,7 +17,10 @@ const STATE_SEPARATOR = ".";
  * @param secret - HMAC secret.
  * @returns Serialized "signature.base64(payload)" string.
  */
-export async function createSignedState(payload: unknown, secret: string): Promise<string> {
+export async function createSignedState(
+	payload: unknown,
+	secret: string,
+): Promise<string> {
 	const jsonString = JSON.stringify(payload);
 	const key = await importKey(secret);
 	const signature = await signData(key, jsonString);
@@ -106,7 +112,11 @@ async function importKey(secret: string): Promise<CryptoKey> {
  */
 async function signData(key: CryptoKey, data: string): Promise<string> {
 	const enc = new TextEncoder();
-	const signatureBuffer = await crypto.subtle.sign("HMAC", key, enc.encode(data));
+	const signatureBuffer = await crypto.subtle.sign(
+		"HMAC",
+		key,
+		enc.encode(data),
+	);
 	// Convert ArrayBuffer to hex string
 	return Array.from(new Uint8Array(signatureBuffer))
 		.map((b) => b.toString(16).padStart(2, "0"))
@@ -131,7 +141,12 @@ async function verifySignature(
 		const signatureBytes = new Uint8Array(
 			signatureHex.match(/.{1,2}/g)!.map((byte) => Number.parseInt(byte, 16)),
 		);
-		return await crypto.subtle.verify("HMAC", key, signatureBytes.buffer, enc.encode(data));
+		return await crypto.subtle.verify(
+			"HMAC",
+			key,
+			signatureBytes.buffer,
+			enc.encode(data),
+		);
 	} catch (e) {
 		// Handle errors during hex parsing or verification
 		console.error("Error verifying signature:", e);
@@ -211,7 +226,10 @@ export async function clientIdAlreadyApproved(
 ): Promise<boolean> {
 	if (!clientId) return false;
 	const cookieHeader = request.headers.get("Cookie");
-	const approvedClients = await getApprovedClientsFromCookie(cookieHeader, cookieSecret);
+	const approvedClients = await getApprovedClientsFromCookie(
+		cookieHeader,
+		cookieSecret,
+	);
 
 	return approvedClients?.includes(clientId) ?? false;
 }
@@ -273,13 +291,20 @@ export interface ApprovalDialogOptions {
  * @param options - Configuration for the approval dialog
  * @returns A Response containing the HTML approval dialog
  */
-export function renderApprovalDialog(request: Request, options: ApprovalDialogOptions): Response {
+export function renderApprovalDialog(
+	request: Request,
+	options: ApprovalDialogOptions,
+): Response {
 	const { client, server, state } = options;
 
 	// Sanitize any untrusted content
 	const serverName = sanitizeHtml(server.name);
-	const clientName = client?.clientName ? sanitizeHtml(client.clientName) : "Unknown MCP Client";
-	const serverDescription = server.description ? sanitizeHtml(server.description) : "";
+	const clientName = client?.clientName
+		? sanitizeHtml(client.clientName)
+		: "Unknown MCP Client";
+	const serverDescription = server.description
+		? sanitizeHtml(server.description)
+		: "";
 
 	// Safe URLs
 	const logoUrl = server.logo ? sanitizeHtml(server.logo) : "";
@@ -505,8 +530,8 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
               </div>
               
               ${
-					clientUri
-						? `
+								clientUri
+									? `
                 <div class="client-detail">
                   <div class="detail-label">Website:</div>
                   <div class="detail-value small">
@@ -516,12 +541,12 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
                   </div>
                 </div>
               `
-						: ""
-				}
+									: ""
+							}
               
               ${
-					policyUri
-						? `
+								policyUri
+									? `
                 <div class="client-detail">
                   <div class="detail-label">Privacy Policy:</div>
                   <div class="detail-value">
@@ -531,12 +556,12 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
                   </div>
                 </div>
               `
-						: ""
-				}
+									: ""
+							}
               
               ${
-					tosUri
-						? `
+								tosUri
+									? `
                 <div class="client-detail">
                   <div class="detail-label">Terms of Service:</div>
                   <div class="detail-value">
@@ -546,12 +571,12 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
                   </div>
                 </div>
               `
-						: ""
-				}
+									: ""
+							}
               
               ${
-					redirectUris.length > 0
-						? `
+								redirectUris.length > 0
+									? `
                 <div class="client-detail">
                   <div class="detail-label">Redirect URIs:</div>
                   <div class="detail-value small">
@@ -559,19 +584,19 @@ export function renderApprovalDialog(request: Request, options: ApprovalDialogOp
                   </div>
                 </div>
               `
-						: ""
-				}
+									: ""
+							}
               
               ${
-					contacts
-						? `
+								contacts
+									? `
                 <div class="client-detail">
                   <div class="detail-label">Contact:</div>
                   <div class="detail-value">${contacts}</div>
                 </div>
               `
-						: ""
-				}
+									: ""
+							}
             </div>
             
             <p>This MCP Client is requesting to be authorized on ${serverName}. If you approve, you will be redirected to complete authentication.</p>
@@ -662,7 +687,9 @@ export async function parseRedirectApproval(
 		(await getApprovedClientsFromCookie(cookieHeader, cookieSecret)) || [];
 
 	// Add the newly approved client ID (avoid duplicates)
-	const updatedApprovedClients = Array.from(new Set([...existingApprovedClients, clientId]));
+	const updatedApprovedClients = Array.from(
+		new Set([...existingApprovedClients, clientId]),
+	);
 
 	// Sign the updated list
 	const payload = JSON.stringify(updatedApprovedClients);

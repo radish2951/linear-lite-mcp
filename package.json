@@ -18,7 +18,6 @@
 		"agents": "^0.2.8",
 		"hono": "^4.9.9",
 		"just-pick": "^4.2.0",
-		"octokit": "^5.0.3",
 		"zod": "^3.25.76"
 	},
 	"devDependencies": {

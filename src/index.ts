@@ -2,23 +2,14 @@ import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { GitHubHandler } from "./github-handler";
+import { LinearOAuthHandler } from "./linear-oauth-handler";
 
-type GitHubAuthProps = {
-	authType: "github";
-	login: string;
+type Props = {
+	userId: string;
 	name: string;
 	email: string;
 	accessToken: string;
 };
-
-type TokenAuthProps = {
-	authType: "token";
-	tokenId: string;
-	label?: string;
-};
-
-type Props = GitHubAuthProps | TokenAuthProps;
 import {
 	searchIssues,
 	getIssue,
@@ -38,33 +29,21 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		version: "0.1.0",
 	});
 
-	private checkAccess() {
-		if (!this.props) {
-			throw new Error("Access denied. Missing authentication context.");
-		}
-
-		if (this.props.authType === "token") {
-			return;
-		}
-
-		const allowedUsers = this.env.ALLOWED_GITHUB_USERS?.split(',').map((u) => u.trim()) || [];
-
-		if (allowedUsers.length > 0 && !allowedUsers.includes(this.props.login)) {
-			throw new Error(`Access denied. User ${this.props.login} is not authorized.`);
-		}
-	}
-
 	private getApiKey() {
-		this.checkAccess();
-		const apiKey = this.env.LINEAR_API_KEY;
-		if (!apiKey) {
-			throw new Error("LINEAR_API_KEY not configured");
+		if (!this.props) {
+			throw new Error(
+				"Authentication required. Please authenticate with Linear.",
+			);
 		}
-		return apiKey;
+		return this.props.accessToken;
 	}
 
 	private getGeminiApiKey() {
-		this.checkAccess();
+		if (!this.props) {
+			throw new Error(
+				"Authentication required. Please authenticate with Linear.",
+			);
+		}
 		return this.env.GEMINI_API_KEY;
 	}
 
@@ -132,7 +111,14 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 					const issues = await searchIssues(
 						apiKey,
 						query,
-						{ teamId, assigneeId, state, priority, includeCompleted, updatedAt },
+						{
+							teamId,
+							assigneeId,
+							state,
+							priority,
+							includeCompleted,
+							updatedAt,
+						},
 						limit,
 					);
 					return {
@@ -155,7 +141,12 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				try {
 					const apiKey = this.getApiKey();
 					const geminiApiKey = this.getGeminiApiKey();
-					const issue = await getIssue(apiKey, identifier, geminiApiKey, summarize_by_gemini);
+					const issue = await getIssue(
+						apiKey,
+						identifier,
+						geminiApiKey,
+						summarize_by_gemini,
+					);
 					return {
 						content: [{ type: "text", text: JSON.stringify(issue, null, 2) }],
 					};
@@ -288,7 +279,10 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 
 					return {
 						content: [
-							{ type: "text", text: JSON.stringify({ success: result.success }, null, 2) },
+							{
+								type: "text",
+								text: JSON.stringify({ success: result.success }, null, 2),
+							},
 						],
 					};
 				} catch (error) {
@@ -330,7 +324,10 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 					const result = await updateComment(apiKey, { commentId, body });
 					return {
 						content: [
-							{ type: "text", text: JSON.stringify({ success: result.success }, null, 2) },
+							{
+								type: "text",
+								text: JSON.stringify({ success: result.success }, null, 2),
+							},
 						],
 					};
 				} catch (error) {
@@ -347,75 +344,6 @@ export default new OAuthProvider({
 	},
 	authorizeEndpoint: "/authorize",
 	clientRegistrationEndpoint: "/register",
-	defaultHandler: GitHubHandler as any,
+	defaultHandler: LinearOAuthHandler as any,
 	tokenEndpoint: "/token",
-	resolveExternalToken: async ({ token, env }) => {
-		const props = resolveServiceToken(token, env as Env);
-		return props ? { props } : null;
-	},
 });
-
-type ServiceTokenDescriptor = {
-	id: string;
-	secret: string;
-	label: string;
-};
-
-function resolveServiceToken(token: string, env: Env): TokenAuthProps | null {
-	const descriptors = parseServiceTokenConfig(env);
-	if (descriptors.length === 0) {
-		return null;
-	}
-
-	for (const descriptor of descriptors) {
-		if (timingSafeEqual(token, descriptor.secret)) {
-			return {
-				authType: "token",
-				tokenId: descriptor.id,
-				label: descriptor.label,
-			};
-		}
-	}
-
-	return null;
-}
-
-function parseServiceTokenConfig(env: Env): ServiceTokenDescriptor[] {
-	const envRecord = env as unknown as Record<string, string | undefined>;
-	const raw = envRecord.MCP_SERVICE_TOKENS;
-	if (!raw) {
-		return [];
-	}
-
-	return raw
-		.split(/[\n,]/)
-		.map((entry) => entry.trim())
-		.filter(Boolean)
-		.map((entry, index) => {
-			const separatorIndex = entry.indexOf(":");
-			if (separatorIndex === -1) {
-				const id = `token-${index + 1}`;
-				return { id, secret: entry, label: id } satisfies ServiceTokenDescriptor;
-			}
-
-			const idPart = entry.slice(0, separatorIndex).trim();
-			const secretPart = entry.slice(separatorIndex + 1).trim();
-			const id = idPart || `token-${index + 1}`;
-			return { id, secret: secretPart, label: idPart || id } satisfies ServiceTokenDescriptor;
-		})
-		.filter((descriptor) => descriptor.secret.length > 0);
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-	const encoder = new TextEncoder();
-	const aBytes = encoder.encode(a);
-	const bBytes = encoder.encode(b);
-	if (aBytes.length !== bBytes.length) {
-		return false;
-	}
-	let diff = 0;
-	for (let i = 0; i < aBytes.length; i += 1) {
-		diff |= aBytes[i] ^ bBytes[i];
-	}
-	return diff === 0;
-}
