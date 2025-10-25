@@ -20,6 +20,12 @@ import {
 	listUsers,
 	createComment,
 	updateComment,
+	listDocuments,
+	getDocument,
+	createDocumentByName,
+	updateDocumentByName,
+	listProjects,
+	listInitiatives,
 } from "./linear";
 
 // Define our Linear MCP agent
@@ -326,6 +332,164 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				try {
 					const apiKey = this.getApiKey();
 					const result = await updateComment(apiKey, { commentId, body });
+					return {
+						content: [
+							{
+								type: "text",
+								text: JSON.stringify({ success: result.success }, null, 2),
+							},
+						],
+					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// List documents
+		this.server.tool(
+			"documents_list",
+			{
+				query: z.string().optional(),
+				projectName: z.string().optional(),
+				initiativeName: z.string().optional(),
+				limit: z.number().min(1).max(100).default(25),
+				includeArchived: z.boolean().default(false),
+			},
+			async ({
+				query,
+				projectName,
+				initiativeName,
+				limit,
+				includeArchived,
+			}) => {
+				try {
+					const apiKey = this.getApiKey();
+
+					// Resolve projectName to projectId if provided
+					let projectId: string | undefined;
+					if (projectName) {
+						const projects = await listProjects(apiKey);
+						const project = projects.find((p) => p.name === projectName);
+						if (!project) {
+							throw new Error(`Project not found: ${projectName}`);
+						}
+						projectId = project.id;
+					}
+
+					// Resolve initiativeName to initiativeId if provided
+					let initiativeId: string | undefined;
+					if (initiativeName) {
+						const initiatives = await listInitiatives(apiKey);
+						const initiative = initiatives.find(
+							(i) => i.name === initiativeName,
+						);
+						if (!initiative) {
+							throw new Error(`Initiative not found: ${initiativeName}`);
+						}
+						initiativeId = initiative.id;
+					}
+
+					const documents = await listDocuments(
+						apiKey,
+						query,
+						{
+							projectId,
+							initiativeId,
+							includeArchived,
+						},
+						limit,
+					);
+					return {
+						content: [{ type: "text", text: JSON.stringify(documents, null, 2) }],
+					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// Get document details
+		this.server.tool(
+			"document_get",
+			{
+				slugId: z.string(),
+			},
+			async ({ slugId }) => {
+				try {
+					const apiKey = this.getApiKey();
+					const document = await getDocument(apiKey, slugId);
+					// Remove internal ID from response
+					const { id, ...documentWithoutId } = document;
+					return {
+						content: [{ type: "text", text: JSON.stringify(documentWithoutId, null, 2) }],
+					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// Create document
+		this.server.tool(
+			"document_create",
+			{
+				title: z.string(),
+				projectName: z.string(),
+				content: z.string().optional(),
+			},
+			async ({ title, content, projectName }) => {
+				try {
+					const apiKey = this.getApiKey();
+					const result = await createDocumentByName(apiKey, {
+						title,
+						content,
+						projectName,
+					});
+
+					const cleanedResult = {
+						success: result.success,
+						document: result.document
+							? {
+									title: result.document.title,
+									slugId: result.document.slugId,
+									url: result.document.url,
+								}
+							: undefined,
+					};
+
+					return {
+						content: [
+							{ type: "text", text: JSON.stringify(cleanedResult, null, 2) },
+						],
+					};
+				} catch (error) {
+					return this.handleError(error);
+				}
+			},
+		);
+
+		// Update document
+		this.server.tool(
+			"document_update",
+			{
+				slugId: z.string(),
+				title: z.string().optional(),
+				content: z.string().optional(),
+				projectName: z.string().optional(),
+				initiativeName: z.string().optional(),
+			},
+			async ({ slugId, title, content, projectName, initiativeName }) => {
+				try {
+					const apiKey = this.getApiKey();
+					const result = await updateDocumentByName(apiKey, {
+						slugId,
+						title,
+						content,
+						projectName,
+						initiativeName,
+					});
+
 					return {
 						content: [
 							{

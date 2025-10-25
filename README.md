@@ -91,6 +91,75 @@ Update an existing issue by human-friendly names. Resolves names to IDs internal
 **Returns**:
 - `success`: Boolean indicating if update succeeded
 
+### `comment_create`
+Create a comment on an issue.
+
+**Parameters**:
+- `identifier` (required): Issue identifier (e.g., "JHS-1")
+- `body` (required): Comment body in markdown
+
+**Returns**:
+- `success`: Boolean indicating if creation succeeded
+
+### `comment_update`
+Update an existing comment.
+
+**Parameters**:
+- `commentId` (required): Comment ID
+- `body` (required): New comment body in markdown
+
+**Returns**:
+- `success`: Boolean indicating if update succeeded
+
+### `documents_list`
+List documents with minimal payload. Returns only essential fields:
+- `title`, `slugId`
+
+**Default behavior**: Excludes archived documents.
+
+**Parameters**:
+- `query` (optional): Freetext search by document title (note: content search not supported by Linear API)
+- `projectName` (optional): Filter by project name (resolved to ID server-side)
+- `initiativeName` (optional): Filter by initiative name (resolved to ID server-side)
+- `limit` (optional): Number of results (1-100, default: 25)
+- `includeArchived` (optional): Include archived documents (default: false)
+
+### `document_get`
+Get full document details including content.
+
+**Parameters**:
+- `slugId` (required): Document slug ID (e.g., "roadmap-2024")
+
+**Returns**:
+- Full document details: `title`, `slugId`, `url`, `icon`, `color`, `content`, `createdAt`, `updatedAt`, `archivedAt`, `creatorName`, `projectName`, `initiativeName`
+
+### `document_create`
+Create a new document by human-friendly names. Resolves names to IDs internally before calling Linear.
+
+**Parameters**:
+- `title` (required): Document title
+- `projectName` (required): Project to create the document in
+- `content` (optional): Document content in markdown
+
+**Returns**:
+- `success`: Boolean indicating if creation succeeded
+- `document.title`: Created document title
+- `document.slugId`: Created document slug ID
+- `document.url`: Created document URL
+
+### `document_update`
+Update an existing document by human-friendly names. Resolves names to IDs internally before calling Linear.
+
+**Parameters**:
+- `slugId` (required): Document slug ID (e.g., "roadmap-2024")
+- `title` (optional): New title
+- `content` (optional): New content in markdown
+- `projectName` (optional): Move to a different project
+- `initiativeName` (optional): Associate with an initiative
+
+**Returns**:
+- `success`: Boolean indicating if update succeeded
+
 ## Setup
 
 ### 1. Install dependencies
@@ -226,6 +295,47 @@ After deployment, don't forget to update your Linear OAuth application's callbac
 {}
 ```
 
+### List documents
+```json
+{
+  "projectName": "Engineering",
+  "limit": 10
+}
+```
+
+### Search documents by title
+```json
+{
+  "query": "roadmap",
+  "projectName": "Product"
+}
+```
+
+### Get document details
+```json
+{
+  "slugId": "roadmap-2024"
+}
+```
+
+### Create a document
+```json
+{
+  "title": "API Design Guidelines",
+  "projectName": "Engineering",
+  "content": "# API Design Guidelines\n\n## REST API Standards\n..."
+}
+```
+
+### Update a document
+```json
+{
+  "slugId": "api-design-guidelines",
+  "content": "# Updated API Design Guidelines\n\n## REST API Standards\n...",
+  "initiativeName": "Platform Improvement"
+}
+```
+
 ## Authentication Flow
 
 When you first connect to this MCP server from Claude.ai or Claude Desktop:
@@ -299,7 +409,8 @@ Result: **~70% smaller payloads** for list operations.
 ## Future Enhancements
 
 - [x] Issue updates
-- [ ] Comment management
+- [x] Comment management
+- [x] Document management (list, get, create, update)
 - [ ] Project and Initiative search
 - [ ] Webhook support for real-time updates
 - [ ] Pagination with cursor support 
