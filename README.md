@@ -33,21 +33,13 @@ List issues with minimal payload. Returns only essential fields:
 - `updatedAt` (optional): Filter by update time using ISO 8601 duration format (e.g., "-P1D" for last 24 hours, "-P7D" for last week)
 
 ### `issue_get`
-Get issue details with optional AI summarization.
+Get full issue details.
 
 **Parameters**:
 - `identifier` (required): Issue identifier (e.g., "JHS-1")
-- `summarize_by_gemini` (optional): Enable AI summary (default: `true`)
 
-**When `summarize_by_gemini=true` (default)**:
-Returns only `summary_by_gemini` field containing a concise overview with all essential information (identifier, title, state, priority, assignee, project, dates, description, key decisions, and next steps)
-
-**When `summarize_by_gemini=false`**:
-Returns full issue details:
-- All fields from lean search
-- `description`, `labels`, `assigneeName`, `creatorName`, `createdAt`, `updatedAt`
-
-**Note**: AI summary requires `GEMINI_API_KEY` to be configured.
+**Returns**:
+- Full issue details: `identifier`, `title`, `state`, `priority`, `projectName`, `dueDate`, `description`, `labels`, `assigneeName`, `creatorName`, `createdAt`, `updatedAt`
 
 ### `workspace_overview`
 Fetch workspace metadata in a single call. Returns:
@@ -186,7 +178,6 @@ npm install
 cat > .dev.vars << EOF
 LINEAR_OAUTH_CLIENT_ID=your_linear_oauth_client_id
 LINEAR_OAUTH_CLIENT_SECRET=your_linear_oauth_client_secret
-GEMINI_API_KEY=your_gemini_api_key_here
 COOKIE_ENCRYPTION_KEY=$(openssl rand -base64 32)
 PUBLIC_BASE_URL=http://localhost:8787
 EOF
@@ -194,7 +185,6 @@ EOF
 # For production deployment
 wrangler secret put LINEAR_OAUTH_CLIENT_ID
 wrangler secret put LINEAR_OAUTH_CLIENT_SECRET
-wrangler secret put GEMINI_API_KEY
 wrangler secret put COOKIE_ENCRYPTION_KEY
 # Also set PUBLIC_BASE_URL as an environment variable (not a secret)
 # via the Cloudflare dashboard or wrangler.jsonc
@@ -202,9 +192,8 @@ wrangler secret put COOKIE_ENCRYPTION_KEY
 
 **Important**: Each user will authenticate with their own Linear account via OAuth. The server does not use a shared API key.
 
-Get your API keys at:
+Get your Linear OAuth credentials at:
 - Linear OAuth: https://linear.app/settings/api/applications
-- Gemini API: https://aistudio.google.com/apikey (free tier: 500 requests/day, 250k tokens/min)
 
 ### 4. Run locally
 ```bash

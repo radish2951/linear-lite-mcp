@@ -44,15 +44,6 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		return this.props.accessToken;
 	}
 
-	private getGeminiApiKey() {
-		if (!this.props) {
-			throw new Error(
-				"Authentication required. Please authenticate with Linear.",
-			);
-		}
-		return this.env.GEMINI_API_KEY;
-	}
-
 	private handleError(error: unknown) {
 		return {
 			content: [
@@ -139,23 +130,16 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			},
 		);
 
-		// Get full issue details with AI summary
+		// Get full issue details
 		this.server.tool(
 			"issue_get",
 			{
 				identifier: z.string(),
-				summarize_by_gemini: z.boolean().default(true),
 			},
-			async ({ identifier, summarize_by_gemini }) => {
+			async ({ identifier }) => {
 				try {
 					const apiKey = this.getApiKey();
-					const geminiApiKey = this.getGeminiApiKey();
-					const issue = await getIssue(
-						apiKey,
-						identifier,
-						geminiApiKey,
-						summarize_by_gemini,
-					);
+					const issue = await getIssue(apiKey, identifier);
 					return {
 						content: [{ type: "text", text: JSON.stringify(issue, null, 2) }],
 					};

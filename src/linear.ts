@@ -2,8 +2,6 @@
  * Lightweight Linear GraphQL client
  */
 
-import { GoogleGenAI } from "@google/genai";
-
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 
 /**
@@ -160,52 +158,11 @@ export async function listIssues(
 }
 
 /**
- * Generate issue summary using Gemini API
- */
-async function generateIssueSummary(
-	geminiApiKey: string,
-	issue: Issue,
-	comments: Comment[],
-): Promise<string> {
-	try {
-		const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-
-		const data = {
-			issue,
-			comments,
-		};
-
-		const prompt = `Summarize this Linear issue data concisely.
-
-Requirements:
-- Must include the identifier
-- Priority levels: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low
-- Be informative enough - key details, context, and decisions
-- Be aware of time series - when things happened and how they evolved
-- Keep it brief, factual, and well-structured (max 5-7 lines)
-
-${JSON.stringify(data, null, 2)}`;
-
-		const response = await ai.models.generateContent({
-			model: "gemini-flash-lite-latest",
-			contents: prompt,
-		});
-
-		return response.text || "Failed to generate summary";
-	} catch (error) {
-		console.error("Gemini API error:", error);
-		return `Error: ${error instanceof Error ? error.message : String(error)}`;
-	}
-}
-
-/**
- * Get full issue details with AI summary
+ * Get full issue details
  */
 export async function getIssue(
 	apiKey: string,
 	identifier: string,
-	geminiApiKey?: string,
-	summarizeByGemini = true,
 ): Promise<Issue> {
 	const query = `
     query GetIssue($id: String!) {
@@ -243,7 +200,7 @@ export async function getIssue(
 		};
 	}>(query, { id: identifier }, apiKey);
 
-	const issue: Issue = {
+	return {
 		identifier: data.issue.identifier,
 		title: data.issue.title,
 		state: data.issue.state.name,
@@ -257,25 +214,6 @@ export async function getIssue(
 		updatedAt: data.issue.updatedAt,
 		creatorName: data.issue.creator?.name || null,
 	};
-
-	// Generate summary if Gemini API key is provided and summarizeByGemini is enabled
-	if (geminiApiKey && summarizeByGemini) {
-		try {
-			const comments = await getIssueComments(apiKey, identifier);
-			const summary = await generateIssueSummary(geminiApiKey, issue, comments);
-
-			// Return only summary when using AI
-			return {
-				summary_by_gemini: summary,
-			};
-		} catch (error) {
-			console.error("Gemini API failed, returning raw issue data:", error);
-			// Fallback to raw data if Gemini fails
-			return issue;
-		}
-	}
-
-	return issue;
 }
 
 /**
