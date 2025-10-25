@@ -156,7 +156,7 @@ Update an existing document by human-friendly names. Resolves names to IDs inter
 
 ### 1. Install dependencies
 ```bash
-npm install
+pnpm install
 ```
 
 ### 2. Create a Linear OAuth Application
@@ -197,7 +197,7 @@ Get your Linear OAuth credentials at:
 
 ### 4. Run locally
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Server will be available at: `http://localhost:8787/mcp`
@@ -206,7 +206,7 @@ Server will be available at: `http://localhost:8787/mcp`
 
 ### 5. Deploy to Cloudflare
 ```bash
-npm run deploy
+pnpm run deploy
 ```
 
 After deployment, don't forget to update your Linear OAuth application's callback URL to include your production URL: `https://your-worker-name.workers.dev/callback`
