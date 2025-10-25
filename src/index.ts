@@ -2,7 +2,7 @@ import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { LinearOAuthHandler } from "./linear-oauth-handler";
+import { LinearOAuthHandler } from "./oauth/handler.js";
 
 type Props = {
 	userId: string;

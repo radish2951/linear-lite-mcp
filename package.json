@@ -1,5 +1,5 @@
 {
-	"name": "remote-mcp-server-authless",
+	"name": "linear-lite-mcp",
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
@@ -16,7 +16,6 @@
 		"@modelcontextprotocol/sdk": "1.19.1",
 		"agents": "^0.2.8",
 		"hono": "^4.9.9",
-		"just-pick": "^4.2.0",
 		"zod": "^3.25.76"
 	},
 	"devDependencies": {

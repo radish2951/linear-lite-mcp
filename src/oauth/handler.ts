@@ -10,7 +10,7 @@ import {
 	parseRedirectApproval,
 	parseSignedState,
 	renderApprovalDialog,
-} from "./workers-oauth-utils";
+} from "./utils.js";
 
 const app = new Hono<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>();
 
