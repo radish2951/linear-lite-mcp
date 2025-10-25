@@ -26,7 +26,7 @@ import {
 	updateDocumentByName,
 	listProjects,
 	listInitiatives,
-} from "./linear";
+} from "./linear/index.js";
 
 // Define our Linear MCP agent
 export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
