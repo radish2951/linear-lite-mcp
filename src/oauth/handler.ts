@@ -174,8 +174,15 @@ app.get("/callback", async (c) => {
 		});
 	}
 
-	const tokenData = await tokenResponse.json<{ access_token: string }>();
+	const tokenData = await tokenResponse.json<{
+		access_token: string;
+		refresh_token?: string;
+		expires_in?: number;
+		token_type: string;
+	}>();
 	const accessToken = tokenData.access_token;
+	const refreshToken = tokenData.refresh_token;
+	const expiresIn = tokenData.expires_in;
 
 	// Fetch user info from Linear
 	const userResponse = await fetch("https://api.linear.app/graphql", {
@@ -205,6 +212,11 @@ app.get("/callback", async (c) => {
 
 	const { id: userId, name, email } = userData.data.viewer;
 
+	// Calculate token expiration timestamp
+	const expiresAt = expiresIn
+		? Date.now() + expiresIn * 1000
+		: undefined;
+
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
 		metadata: {
 			label: name,
@@ -214,6 +226,8 @@ app.get("/callback", async (c) => {
 			name,
 			email,
 			accessToken,
+			refreshToken,
+			expiresAt,
 		},
 		request: parsedState.oauthReqInfo,
 		scope: parsedState.oauthReqInfo.scope,

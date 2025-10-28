@@ -9,6 +9,8 @@ type Props = {
 	name: string;
 	email: string;
 	accessToken: string;
+	refreshToken?: string;
+	expiresAt?: number;
 };
 import {
 	listIssues,
@@ -35,13 +37,84 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		version: "0.1.0",
 	});
 
-	private getApiKey() {
+	private async getApiKey(): Promise<string> {
 		if (!this.props) {
 			throw new Error(
 				"Authentication required. Please authenticate with Linear.",
 			);
 		}
+
+		// Check if token is expired or about to expire (within 5 minutes)
+		const now = Date.now();
+		const fiveMinutes = 5 * 60 * 1000;
+
+		if (this.props.expiresAt && now >= this.props.expiresAt - fiveMinutes) {
+			// Token expired or about to expire, try to refresh
+			if (this.props.refreshToken) {
+				await this.refreshAccessToken();
+			} else {
+				throw new Error(
+					"Access token has expired and no refresh token is available. Please re-authenticate with Linear.",
+				);
+			}
+		}
+
 		return this.props.accessToken;
+	}
+
+	private async refreshAccessToken(): Promise<void> {
+		if (!this.props?.refreshToken) {
+			throw new Error("No refresh token available");
+		}
+
+		try {
+			const response = await fetch("https://api.linear.app/oauth/token", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/x-www-form-urlencoded",
+				},
+				body: new URLSearchParams({
+					grant_type: "refresh_token",
+					refresh_token: this.props.refreshToken,
+					client_id: this.env.LINEAR_OAUTH_CLIENT_ID,
+					client_secret: this.env.LINEAR_OAUTH_CLIENT_SECRET,
+				}),
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error("Token refresh failed:", errorText);
+				throw new Error(
+					"Failed to refresh access token. Please re-authenticate with Linear.",
+				);
+			}
+
+			const tokenData = await response.json<{
+				access_token: string;
+				refresh_token?: string;
+				expires_in?: number;
+				token_type: string;
+			}>();
+
+			// Update props with new tokens
+			const expiresAt = tokenData.expires_in
+				? Date.now() + tokenData.expires_in * 1000
+				: undefined;
+
+			this.props = {
+				...this.props,
+				accessToken: tokenData.access_token,
+				refreshToken: tokenData.refresh_token || this.props.refreshToken,
+				expiresAt,
+			};
+
+			console.log("Access token refreshed successfully");
+		} catch (error) {
+			console.error("Error refreshing token:", error);
+			throw new Error(
+				"Failed to refresh access token. Please re-authenticate with Linear.",
+			);
+		}
 	}
 
 	private handleError(error: unknown) {
@@ -83,7 +156,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				updatedAt,
 			}) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 
 					// Resolve teamName to teamId if provided
 					let teamId: string | undefined;
@@ -138,7 +211,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			},
 			async ({ identifier }) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 					const issue = await getIssue(apiKey, identifier);
 					return {
 						content: [{ type: "text", text: JSON.stringify(issue, null, 2) }],
@@ -152,7 +225,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		// Get workspace overview - all teams, users, labels, states, and projects
 		this.server.tool("workspace_overview", {}, async () => {
 			try {
-				const apiKey = this.getApiKey();
+				const apiKey = await this.getApiKey();
 				const overview = await getWorkspaceOverview(apiKey);
 
 				const cleanedOverview = {
@@ -199,7 +272,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				dueDate,
 			}) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 					const result = await createIssueByName(apiKey, {
 						teamName,
 						title,
@@ -258,7 +331,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				dueDate,
 			}) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 					const result = await updateIssueByName(apiKey, {
 						identifier,
 						title,
@@ -294,7 +367,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			},
 			async ({ identifier, body }) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 					const result = await createComment(apiKey, { identifier, body });
 					return {
 						content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -314,7 +387,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			},
 			async ({ commentId, body }) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 					const result = await updateComment(apiKey, { commentId, body });
 					return {
 						content: [
@@ -348,7 +421,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				includeArchived,
 			}) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 
 					// Resolve projectName to projectId if provided
 					let projectId: string | undefined;
@@ -401,7 +474,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			},
 			async ({ slugId }) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 					const document = await getDocument(apiKey, slugId);
 					// Remove internal ID from response
 					const { id, ...documentWithoutId } = document;
@@ -424,7 +497,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			},
 			async ({ title, content, projectName }) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 					const result = await createDocumentByName(apiKey, {
 						title,
 						content,
@@ -465,7 +538,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			},
 			async ({ slugId, title, content, projectName, initiativeName }) => {
 				try {
-					const apiKey = this.getApiKey();
+					const apiKey = await this.getApiKey();
 					const result = await updateDocumentByName(apiKey, {
 						slugId,
 						title,
