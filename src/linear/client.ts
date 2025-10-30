@@ -12,9 +12,17 @@ export async function executeQuery<T>(
 	variables: Record<string, unknown>,
 	apiKey: string,
 ): Promise<T> {
-	const authorizationHeader = apiKey.startsWith("Bearer ")
+	if (!apiKey) {
+		throw new Error("API key is required but was not provided");
+	}
+
+	// Linear API keys (lin_api_*) don't use Bearer prefix
+	// OAuth tokens need Bearer prefix
+	const authorizationHeader = apiKey.startsWith("lin_api_")
 		? apiKey
-		: `Bearer ${apiKey}`;
+		: apiKey.startsWith("Bearer ")
+			? apiKey
+			: `Bearer ${apiKey}`;
 
 	const response = await fetch(LINEAR_API_URL, {
 		method: "POST",

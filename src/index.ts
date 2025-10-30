@@ -3,6 +3,7 @@ import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { LinearOAuthHandler } from "./oauth/handler.js";
+import type { Connection, ConnectionContext } from "agents";
 
 type Props = {
 	userId: string;
@@ -134,6 +135,33 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			],
 			isError: true,
 		};
+	}
+
+	async onConnect(conn: Connection, ctx: ConnectionContext): Promise<void> {
+		// Extract Authorization header from the request
+		const authHeader = ctx.request.headers.get("Authorization");
+		if (authHeader) {
+			// Extract token from "Bearer <token>" format
+			const token = authHeader.startsWith("Bearer ")
+				? authHeader.slice(7)
+				: authHeader;
+
+			// Set apiToken in props
+			if (token) {
+				await this.updateProps({
+					...(this.props || {
+						userId: "token-user",
+						name: "Token User",
+						email: "",
+						accessToken: "",
+					}),
+					apiToken: token,
+				});
+			}
+		}
+
+		// Call parent implementation
+		return super.onConnect(conn, ctx);
 	}
 
 	async init() {
