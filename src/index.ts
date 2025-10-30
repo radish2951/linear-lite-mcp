@@ -12,7 +12,6 @@ type Props = {
 	accessToken: string;
 	refreshToken?: string;
 	expiresAt?: number;
-	apiToken?: string;
 };
 import {
 	listIssues,
@@ -32,6 +31,10 @@ import {
 	listInitiatives,
 } from "./linear/index.js";
 
+// Endpoints
+const MCP_OAUTH_PATH = "/mcp";
+const MCP_NO_OAUTH_PATH = "/mcp-no-oauth";
+
 // Define our Linear MCP agent
 export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	server = new McpServer({
@@ -40,15 +43,9 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	});
 
 	private async getApiKey(): Promise<string> {
-		// Priority 1: Check for simple API token (from MCP client)
-		if (this.props?.apiToken) {
-			return this.props.apiToken;
-		}
-
-		// Priority 2: Use OAuth flow
 		if (!this.props) {
 			throw new Error(
-				"Authentication required. Please authenticate with Linear or provide an API token.",
+				"Authentication required. Please authenticate with Linear.",
 			);
 		}
 
@@ -138,29 +135,26 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	}
 
 	async onConnect(conn: Connection, ctx: ConnectionContext): Promise<void> {
-		// Extract Authorization header from the request
+		// Check for API key auth on non-OAuth endpoint only
+		const url = new URL(ctx.request.url);
 		const authHeader = ctx.request.headers.get("Authorization");
-		if (authHeader) {
-			// Extract token from "Bearer <token>" format
-			const token = authHeader.startsWith("Bearer ")
-				? authHeader.slice(7)
+
+		if (url.pathname === MCP_NO_OAUTH_PATH && authHeader) {
+			// Bearer プレフィックスがあれば除去、なければそのまま使う
+			const apiKey = authHeader.startsWith("Bearer ")
+				? authHeader.substring(7)
 				: authHeader;
 
-			// Set apiToken in props
-			if (token) {
-				await this.updateProps({
-					...(this.props || {
-						userId: "token-user",
-						name: "Token User",
-						email: "",
-						accessToken: "",
-					}),
-					apiToken: token,
-				});
-			}
+			// Set and persist props with the API key (bypass OAuth)
+			await this.updateProps({
+				userId: "api-key-user",
+				name: "API Key User",
+				email: "",
+				accessToken: apiKey,
+			});
 		}
 
-		// Call parent implementation
+		// Always call parent implementation (handles transport setup)
 		return super.onConnect(conn, ctx);
 	}
 
@@ -268,7 +262,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 					workspaceLabels: overview.workspaceLabels,
 					initiatives: overview.initiatives,
 					users: overview.users.map(({ id, ...user }) => user),
-				activeIssues: overview.activeIssues,
+					activeIssues: overview.activeIssues,
 				};
 
 				return {
@@ -324,8 +318,8 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						success: result.success,
 						issue: result.issue
 							? {
-									identifier: result.issue.identifier,
-								}
+								identifier: result.issue.identifier,
+							}
 							: undefined,
 					};
 
@@ -543,10 +537,10 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						success: result.success,
 						document: result.document
 							? {
-									title: result.document.title,
-									slugId: result.document.slugId,
-									url: result.document.url,
-								}
+								title: result.document.title,
+								slugId: result.document.slugId,
+								url: result.document.url,
+							}
 							: undefined,
 					};
 
@@ -598,11 +592,9 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	}
 }
 
-const mcpHandler = LinearLiteMCP.serve("/mcp");
-
 const oauthProvider = new OAuthProvider({
 	apiHandlers: {
-		"/mcp": mcpHandler,
+		[MCP_OAUTH_PATH]: LinearLiteMCP.serve(MCP_OAUTH_PATH),
 	},
 	authorizeEndpoint: "/authorize",
 	clientRegistrationEndpoint: "/register",
@@ -610,18 +602,34 @@ const oauthProvider = new OAuthProvider({
 	tokenEndpoint: "/token",
 });
 
-// Wrapper to support both OAuth and simple token authentication
+const mcpNoOAuthHandler = LinearLiteMCP.serve(MCP_NO_OAUTH_PATH, {
+	corsOptions: {
+		headers: "Content-Type, Accept, Authorization, mcp-session-id, mcp-protocol-version",
+	},
+});
+
+// Custom wrapper to handle both OAuth and API key authentication
 export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-		const authHeader = request.headers.get("Authorization");
 		const url = new URL(request.url);
 
-		// If Authorization header exists, use token authentication (bypass OAuth)
-		if (authHeader && url.pathname === "/mcp") {
-			return mcpHandler.fetch(request, env, ctx);
+		// Handle non-OAuth endpoint with API key authentication (bypass OAuth provider)
+		if (url.pathname === MCP_NO_OAUTH_PATH) {
+			return mcpNoOAuthHandler.fetch(request, env, ctx);
 		}
 
-		// Otherwise, use OAuth flow
-		return oauthProvider.fetch(request, env, ctx);
+		// Handle OAuth-related routes
+		if (
+			url.pathname === MCP_OAUTH_PATH ||
+			url.pathname === "/authorize" ||
+			url.pathname === "/callback" ||
+			url.pathname === "/token" ||
+			url.pathname === "/register"
+		) {
+			return oauthProvider.fetch(request, env, ctx);
+		}
+
+		// Return 404 for unknown routes
+		return new Response("Not Found", { status: 404 });
 	},
 };
