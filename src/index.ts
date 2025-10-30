@@ -11,6 +11,7 @@ type Props = {
 	accessToken: string;
 	refreshToken?: string;
 	expiresAt?: number;
+	apiToken?: string;
 };
 import {
 	listIssues,
@@ -38,9 +39,15 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	});
 
 	private async getApiKey(): Promise<string> {
+		// Priority 1: Check for simple API token (from MCP client)
+		if (this.props?.apiToken) {
+			return this.props.apiToken;
+		}
+
+		// Priority 2: Use OAuth flow
 		if (!this.props) {
 			throw new Error(
-				"Authentication required. Please authenticate with Linear.",
+				"Authentication required. Please authenticate with Linear or provide an API token.",
 			);
 		}
 
@@ -563,12 +570,30 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	}
 }
 
-export default new OAuthProvider({
+const mcpHandler = LinearLiteMCP.serve("/mcp");
+
+const oauthProvider = new OAuthProvider({
 	apiHandlers: {
-		"/mcp": LinearLiteMCP.serve("/mcp"),
+		"/mcp": mcpHandler,
 	},
 	authorizeEndpoint: "/authorize",
 	clientRegistrationEndpoint: "/register",
 	defaultHandler: LinearOAuthHandler as any,
 	tokenEndpoint: "/token",
 });
+
+// Wrapper to support both OAuth and simple token authentication
+export default {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+		const authHeader = request.headers.get("Authorization");
+		const url = new URL(request.url);
+
+		// If Authorization header exists, use token authentication (bypass OAuth)
+		if (authHeader && url.pathname === "/mcp") {
+			return mcpHandler.fetch(request, env, ctx);
+		}
+
+		// Otherwise, use OAuth flow
+		return oauthProvider.fetch(request, env, ctx);
+	},
+};
