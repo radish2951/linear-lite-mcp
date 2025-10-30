@@ -106,12 +106,15 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				? Date.now() + tokenData.expires_in * 1000
 				: undefined;
 
-			this.props = {
+			const updatedProps = {
 				...this.props,
 				accessToken: tokenData.access_token,
 				refreshToken: tokenData.refresh_token || this.props.refreshToken,
 				expiresAt,
 			};
+
+			// Persist the updated tokens
+			await this.updateProps(updatedProps);
 
 			console.log("Access token refreshed successfully");
 		} catch (error) {
