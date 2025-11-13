@@ -5,6 +5,13 @@
 import { executeQuery } from "./client.js";
 
 /**
+ * Options for executeQuery
+ */
+interface QueryOptions {
+	onTokenRefreshNeeded?: () => Promise<string>;
+}
+
+/**
  * Comment type
  */
 export interface Comment {
@@ -23,6 +30,7 @@ export interface Comment {
 export async function getIssueComments(
 	apiKey: string,
 	identifier: string,
+	options?: QueryOptions,
 ): Promise<Comment[]> {
 	const query = `
     query GetIssueComments($id: String!) {
@@ -56,7 +64,7 @@ export async function getIssueComments(
 				}>;
 			};
 		};
-	}>(query, { id: identifier }, apiKey);
+	}>(query, { id: identifier }, apiKey, options);
 
 	return data.issue.comments.nodes.map((comment) => ({
 		id: comment.id,
@@ -93,6 +101,7 @@ export interface CreateCommentResult {
 export async function createComment(
 	apiKey: string,
 	input: CreateCommentInput,
+	options?: QueryOptions,
 ): Promise<CreateCommentResult> {
 	// First get the issue ID from identifier
 	const issueQuery = `
@@ -105,7 +114,7 @@ export async function createComment(
 
 	const issueData = await executeQuery<{
 		issue: { id: string };
-	}>(issueQuery, { id: input.identifier }, apiKey);
+	}>(issueQuery, { id: input.identifier }, apiKey, options);
 
 	// Create the comment
 	const mutation = `
@@ -135,6 +144,7 @@ export async function createComment(
 			},
 		},
 		apiKey,
+		options,
 	);
 
 	return data.commentCreate;
@@ -161,6 +171,7 @@ export interface UpdateCommentResult {
 export async function updateComment(
 	apiKey: string,
 	input: UpdateCommentInput,
+	options?: QueryOptions,
 ): Promise<UpdateCommentResult> {
 	const mutation = `
     mutation UpdateComment($id: String!, $input: CommentUpdateInput!) {
@@ -183,6 +194,7 @@ export async function updateComment(
 			},
 		},
 		apiKey,
+		options,
 	);
 
 	return data.commentUpdate;

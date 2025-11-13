@@ -7,6 +7,13 @@ import { listProjects } from "./projects.js";
 import { listInitiatives } from "./initiatives.js";
 
 /**
+ * Options for executeQuery
+ */
+interface QueryOptions {
+	onTokenRefreshNeeded?: () => Promise<string>;
+}
+
+/**
  * Document type
  */
 export interface Document {
@@ -37,6 +44,7 @@ export async function listDocuments(
 		includeArchived?: boolean;
 	},
 	first = 25,
+	options?: QueryOptions,
 ): Promise<Pick<Document, "title" | "slugId">[]> {
 	const filterObj: Record<string, unknown> = {};
 	if (filter?.projectId) filterObj.project = { id: { eq: filter.projectId } };
@@ -71,7 +79,7 @@ export async function listDocuments(
 				archivedAt: string | null;
 			}>;
 		};
-	}>(graphqlQuery, { filter: filterObj, first }, apiKey);
+	}>(graphqlQuery, { filter: filterObj, first }, apiKey, options);
 
 	// Filter out archived documents if includeArchived is false, then map to minimal fields
 	return data.documents.nodes
@@ -85,6 +93,7 @@ export async function listDocuments(
 export async function getDocument(
 	apiKey: string,
 	slugId: string,
+	options?: QueryOptions,
 ): Promise<Document> {
 	// First, query documents to find the one with matching slugId
 	const query = `
@@ -127,7 +136,7 @@ export async function getDocument(
 				initiative: { name: string } | null;
 			}>;
 		};
-	}>(query, { filter: { slugId: { eq: slugId } } }, apiKey);
+	}>(query, { filter: { slugId: { eq: slugId } } }, apiKey, options);
 
 	if (data.documents.nodes.length === 0) {
 		throw new Error(`Document not found with slugId: ${slugId}`);
@@ -180,6 +189,7 @@ export interface CreateDocumentResult {
 export async function createDocument(
 	apiKey: string,
 	input: CreateDocumentInput,
+	options?: QueryOptions,
 ): Promise<CreateDocumentResult> {
 	const mutation = `
     mutation CreateDocument($input: DocumentCreateInput!) {
@@ -205,7 +215,7 @@ export async function createDocument(
 				url: string;
 			};
 		};
-	}>(mutation, { input }, apiKey);
+	}>(mutation, { input }, apiKey, options);
 
 	return data.documentCreate;
 }
@@ -234,6 +244,7 @@ export interface UpdateDocumentResult {
 export async function updateDocument(
 	apiKey: string,
 	input: UpdateDocumentInput,
+	options?: QueryOptions,
 ): Promise<UpdateDocumentResult> {
 	const mutation = `
     mutation UpdateDocument($id: String!, $input: DocumentUpdateInput!) {
@@ -249,7 +260,7 @@ export async function updateDocument(
 		documentUpdate: {
 			success: boolean;
 		};
-	}>(mutation, { id, input: updateInput }, apiKey);
+	}>(mutation, { id, input: updateInput }, apiKey, options);
 
 	return data.documentUpdate;
 }
@@ -269,9 +280,10 @@ export interface CreateDocumentByNameInput {
 export async function createDocumentByName(
 	apiKey: string,
 	input: CreateDocumentByNameInput,
+	options?: QueryOptions,
 ): Promise<CreateDocumentResult> {
 	// Resolve projectName to projectId
-	const projects = await listProjects(apiKey);
+	const projects = await listProjects(apiKey, undefined, false, options);
 	const project = projects.find((p) => p.name === input.projectName);
 	if (!project) {
 		throw new Error(`Project not found: ${input.projectName}`);
@@ -281,7 +293,7 @@ export async function createDocumentByName(
 		title: input.title,
 		content: input.content,
 		projectId: project.id,
-	});
+	}, options);
 }
 
 /**
@@ -301,14 +313,15 @@ export interface UpdateDocumentByNameInput {
 export async function updateDocumentByName(
 	apiKey: string,
 	input: UpdateDocumentByNameInput,
+	options?: QueryOptions,
 ): Promise<UpdateDocumentResult> {
 	// First, find the document by slugId to get its internal ID
-	const document = await getDocument(apiKey, input.slugId);
+	const document = await getDocument(apiKey, input.slugId, options);
 
 	// Resolve projectName to projectId if provided
 	let projectId: string | undefined;
 	if (input.projectName) {
-		const projects = await listProjects(apiKey);
+		const projects = await listProjects(apiKey, undefined, false, options);
 		const project = projects.find((p) => p.name === input.projectName);
 		if (!project) {
 			throw new Error(`Project not found: ${input.projectName}`);
@@ -319,7 +332,7 @@ export async function updateDocumentByName(
 	// Resolve initiativeName to initiativeId if provided
 	let initiativeId: string | undefined;
 	if (input.initiativeName) {
-		const initiatives = await listInitiatives(apiKey);
+		const initiatives = await listInitiatives(apiKey, options);
 		const initiative = initiatives.find((i) => i.name === input.initiativeName);
 		if (!initiative) {
 			throw new Error(`Initiative not found: ${input.initiativeName}`);
@@ -333,5 +346,5 @@ export async function updateDocumentByName(
 		content: input.content,
 		projectId,
 		initiativeId,
-	});
+	}, options);
 }

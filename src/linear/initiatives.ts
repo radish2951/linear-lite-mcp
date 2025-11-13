@@ -5,6 +5,13 @@
 import { executeQuery } from "./client.js";
 
 /**
+ * Options for executeQuery
+ */
+interface QueryOptions {
+	onTokenRefreshNeeded?: () => Promise<string>;
+}
+
+/**
  * Initiative type
  */
 export interface Initiative {
@@ -15,7 +22,7 @@ export interface Initiative {
 /**
  * List initiatives
  */
-export async function listInitiatives(apiKey: string): Promise<Initiative[]> {
+export async function listInitiatives(apiKey: string, options?: QueryOptions): Promise<Initiative[]> {
 	const query = `
     query ListInitiatives {
       initiatives {
@@ -31,6 +38,7 @@ export async function listInitiatives(apiKey: string): Promise<Initiative[]> {
 		query,
 		{},
 		apiKey,
+		options,
 	);
 
 	return data.initiatives.nodes;

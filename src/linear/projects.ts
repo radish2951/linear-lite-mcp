@@ -5,6 +5,13 @@
 import { executeQuery } from "./client.js";
 
 /**
+ * Options for executeQuery
+ */
+interface QueryOptions {
+	onTokenRefreshNeeded?: () => Promise<string>;
+}
+
+/**
  * Project type
  */
 export interface Project {
@@ -20,6 +27,7 @@ export async function listProjects(
 	apiKey: string,
 	teamId?: string,
 	includeCompleted = false,
+	options?: QueryOptions,
 ): Promise<Project[]> {
 	if (teamId) {
 		// Get projects for a specific team
@@ -39,7 +47,7 @@ export async function listProjects(
 
 		const data = await executeQuery<{
 			team: { projects: { nodes: Project[] } };
-		}>(query, { teamId }, apiKey);
+		}>(query, { teamId }, apiKey, options);
 
 		const projects = data.team.projects.nodes;
 		return includeCompleted
@@ -70,6 +78,7 @@ export async function listProjects(
 			query,
 			{ filter },
 			apiKey,
+			options,
 		);
 
 		return data.projects.nodes;

@@ -5,6 +5,13 @@
 import { executeQuery } from "./client.js";
 
 /**
+ * Options for executeQuery
+ */
+interface QueryOptions {
+	onTokenRefreshNeeded?: () => Promise<string>;
+}
+
+/**
  * User type
  */
 export interface User {
@@ -16,7 +23,7 @@ export interface User {
 /**
  * List users
  */
-export async function listUsers(apiKey: string): Promise<User[]> {
+export async function listUsers(apiKey: string, options?: QueryOptions): Promise<User[]> {
 	const query = `
     query ListUsers {
       users {
@@ -33,6 +40,7 @@ export async function listUsers(apiKey: string): Promise<User[]> {
 		query,
 		{},
 		apiKey,
+		options,
 	);
 
 	return data.users.nodes;

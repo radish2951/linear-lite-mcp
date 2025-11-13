@@ -213,9 +213,10 @@ app.get("/callback", async (c) => {
 	const { id: userId, name, email } = userData.data.viewer;
 
 	// Calculate token expiration timestamp
+	// If Linear doesn't provide expires_in, use 23 hours as conservative default
 	const expiresAt = expiresIn
 		? Date.now() + expiresIn * 1000
-		: undefined;
+		: Date.now() + 23 * 60 * 60 * 1000;
 
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
 		metadata: {

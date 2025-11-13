@@ -5,6 +5,13 @@
 import { executeQuery } from "./client.js";
 
 /**
+ * Options for executeQuery
+ */
+interface QueryOptions {
+	onTokenRefreshNeeded?: () => Promise<string>;
+}
+
+/**
  * Team type
  */
 export interface Team {
@@ -16,7 +23,7 @@ export interface Team {
 /**
  * List teams
  */
-export async function listTeams(apiKey: string): Promise<Team[]> {
+export async function listTeams(apiKey: string, options?: QueryOptions): Promise<Team[]> {
 	const query = `
     query ListTeams {
       teams {
@@ -33,6 +40,7 @@ export async function listTeams(apiKey: string): Promise<Team[]> {
 		query,
 		{},
 		apiKey,
+		options,
 	);
 
 	return data.teams.nodes;
@@ -53,6 +61,7 @@ export interface State {
 export async function listStates(
 	apiKey: string,
 	teamId: string,
+	options?: QueryOptions,
 ): Promise<State[]> {
 	const query = `
     query ListStates($teamId: String!) {
@@ -72,6 +81,7 @@ export async function listStates(
 		query,
 		{ teamId },
 		apiKey,
+		options,
 	);
 
 	return data.team.states.nodes;

@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { LinearOAuthHandler } from "./oauth/handler.js";
 import type { Connection, ConnectionContext } from "agents";
+import { LinearCache } from "./linear/cache.js";
 
 type Props = {
 	userId: string;
@@ -11,7 +12,7 @@ type Props = {
 	email: string;
 	accessToken: string;
 	refreshToken?: string;
-	expiresAt?: number;
+	expiresAt?: number; // Optional for backward compatibility with legacy sessions
 };
 import {
 	listIssues,
@@ -19,17 +20,14 @@ import {
 	createIssueByName,
 	updateIssueByName,
 	getWorkspaceOverview,
-	listTeams,
-	listUsers,
 	createComment,
 	updateComment,
 	listDocuments,
 	getDocument,
 	createDocumentByName,
 	updateDocumentByName,
-	listProjects,
-	listInitiatives,
 } from "./linear/index.js";
+import { executeQuery } from "./linear/client.js";
 
 // Endpoints
 const MCP_OAUTH_PATH = "/mcp";
@@ -42,11 +40,42 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		version: "0.1.0",
 	});
 
+	// Mutex to prevent concurrent refresh requests
+	private refreshPromise: Promise<void> | null = null;
+
+	// Cache for frequently accessed Linear data
+	private cache = new LinearCache();
+
+	// Track current user to detect switches
+	private currentUserId: string | null = null;
+
 	private async getApiKey(): Promise<string> {
 		if (!this.props) {
 			throw new Error(
 				"Authentication required. Please authenticate with Linear.",
 			);
+		}
+
+		// Detect user switch and clear cache
+		if (this.currentUserId && this.currentUserId !== this.props.userId) {
+			console.log("User switch detected, clearing cache...");
+			this.cache.clear();
+		}
+		this.currentUserId = this.props.userId;
+
+		// Handle legacy sessions without expiresAt
+		if (!this.props.expiresAt) {
+			if (this.props.refreshToken) {
+				// Force refresh to get a proper expiresAt
+				console.log("Legacy session detected, forcing token refresh...");
+				await this.refreshAccessToken();
+			} else {
+				// API key mode - set a far future expiration
+				await this.updateProps({
+					...this.props,
+					expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+				});
+			}
 		}
 
 		// Check if token is expired or about to expire (within 5 minutes)
@@ -67,7 +96,94 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		return this.props.accessToken;
 	}
 
+	/**
+	 * Get API key with automatic refresh on 401
+	 * Used as callback for executeQuery
+	 */
+	private async refreshAndGetApiKey(): Promise<string> {
+		if (!this.props?.refreshToken) {
+			throw new Error("No refresh token available for authentication retry");
+		}
+		await this.refreshAccessToken();
+		return this.props.accessToken;
+	}
+
+	/**
+	 * Execute Linear API query with automatic token refresh
+	 * This is the preferred way to call Linear API - it properly handles 401 errors
+	 */
+	private async executeLinearQuery<T>(
+		query: string,
+		variables: Record<string, unknown> = {},
+	): Promise<T> {
+		const apiKey = await this.getApiKey();
+		return executeQuery<T>(query, variables, apiKey, {
+			onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+		});
+	}
+
+	/**
+	 * Get teams with caching
+	 */
+	private async getCachedTeams(): Promise<Array<{ id: string; name: string; key: string }>> {
+		return this.cache.getOrFetch("teams", async () => {
+			const query = `query ListTeams { teams { nodes { id name key } } }`;
+			const data = await this.executeLinearQuery<{ teams: { nodes: Array<{ id: string; name: string; key: string }> } }>(query);
+			return data.teams.nodes;
+		});
+	}
+
+	/**
+	 * Get users with caching
+	 */
+	private async getCachedUsers(): Promise<Array<{ id: string; name: string; active: boolean }>> {
+		return this.cache.getOrFetch("users", async () => {
+			const query = `query ListUsers { users { nodes { id name active } } }`;
+			const data = await this.executeLinearQuery<{ users: { nodes: Array<{ id: string; name: string; active: boolean }> } }>(query);
+			return data.users.nodes;
+		});
+	}
+
+	/**
+	 * Get projects with caching
+	 */
+	private async getCachedProjects(): Promise<Array<{ id: string; name: string }>> {
+		return this.cache.getOrFetch("projects", async () => {
+			const query = `query ListProjects { projects { nodes { id name } } }`;
+			const data = await this.executeLinearQuery<{ projects: { nodes: Array<{ id: string; name: string }> } }>(query);
+			return data.projects.nodes;
+		});
+	}
+
+	/**
+	 * Get initiatives with caching
+	 */
+	private async getCachedInitiatives(): Promise<Array<{ id: string; name: string }>> {
+		return this.cache.getOrFetch("initiatives", async () => {
+			const query = `query ListInitiatives { initiatives { nodes { id name } } }`;
+			const data = await this.executeLinearQuery<{ initiatives: { nodes: Array<{ id: string; name: string }> } }>(query);
+			return data.initiatives.nodes;
+		});
+	}
+
 	private async refreshAccessToken(): Promise<void> {
+		// If refresh is already in progress, wait for it
+		if (this.refreshPromise) {
+			return this.refreshPromise;
+		}
+
+		// Start refresh and store the promise
+		this.refreshPromise = this.performRefresh();
+
+		try {
+			await this.refreshPromise;
+		} finally {
+			// Clear the promise when done
+			this.refreshPromise = null;
+		}
+	}
+
+	private async performRefresh(): Promise<void> {
 		if (!this.props?.refreshToken) {
 			throw new Error("No refresh token available");
 		}
@@ -102,9 +218,10 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			}>();
 
 			// Update props with new tokens
+			// If Linear doesn't provide expires_in, use 23 hours as conservative default
 			const expiresAt = tokenData.expires_in
 				? Date.now() + tokenData.expires_in * 1000
-				: undefined;
+				: Date.now() + 23 * 60 * 60 * 1000;
 
 			const updatedProps = {
 				...this.props,
@@ -149,11 +266,13 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				: authHeader;
 
 			// Set and persist props with the API key (bypass OAuth)
+			// API keys don't expire, so set a far future expiration
 			await this.updateProps({
 				userId: "api-key-user",
 				name: "API Key User",
 				email: "",
 				accessToken: apiKey,
+				expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000, // 1 year
 			});
 		}
 
@@ -188,12 +307,10 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				updatedAt,
 			}) => {
 				try {
-					const apiKey = await this.getApiKey();
-
-					// Resolve teamName to teamId if provided
+					// Resolve teamName to teamId if provided (with caching)
 					let teamId: string | undefined;
 					if (teamName) {
-						const teams = await listTeams(apiKey);
+						const teams = await this.getCachedTeams();
 						const team = teams.find((t) => t.name === teamName);
 						if (!team) {
 							throw new Error(`Team not found: ${teamName}`);
@@ -201,10 +318,10 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						teamId = team.id;
 					}
 
-					// Resolve assigneeName to assigneeId if provided
+					// Resolve assigneeName to assigneeId if provided (with caching)
 					let assigneeId: string | undefined;
 					if (assigneeName) {
-						const users = await listUsers(apiKey);
+						const users = await this.getCachedUsers();
 						const user = users.find((u) => u.name === assigneeName);
 						if (!user) {
 							throw new Error(`User not found: ${assigneeName}`);
@@ -212,6 +329,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						assigneeId = user.id;
 					}
 
+					const apiKey = await this.getApiKey();
 					const issues = await listIssues(
 						apiKey,
 						query,
@@ -225,6 +343,9 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 							updatedAt,
 						},
 						limit,
+						{
+							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+						},
 					);
 					return {
 						content: [{ type: "text", text: JSON.stringify(issues, null, 2) }],
@@ -244,7 +365,9 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			async ({ identifier }) => {
 				try {
 					const apiKey = await this.getApiKey();
-					const issue = await getIssue(apiKey, identifier);
+					const issue = await getIssue(apiKey, identifier, {
+						onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+					});
 					return {
 						content: [{ type: "text", text: JSON.stringify(issue, null, 2) }],
 					};
@@ -258,13 +381,21 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		this.server.tool("workspace_overview", {}, async () => {
 			try {
 				const apiKey = await this.getApiKey();
-				const overview = await getWorkspaceOverview(apiKey);
+				const overview = await getWorkspaceOverview(apiKey, {
+					onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+				});
 
 				const cleanedOverview = {
-					teams: overview.teams.map(({ id, ...team }) => team),
+					teams: overview.teams.map((team: { id: string }) => {
+						const { id, ...rest } = team;
+						return rest;
+					}),
 					workspaceLabels: overview.workspaceLabels,
 					initiatives: overview.initiatives,
-					users: overview.users.map(({ id, ...user }) => user),
+					users: overview.users.map((user: { id: string; name: string }) => {
+						const { id, ...rest } = user;
+						return rest;
+					}),
 					activeIssues: overview.activeIssues,
 				};
 
@@ -305,17 +436,23 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			}) => {
 				try {
 					const apiKey = await this.getApiKey();
-					const result = await createIssueByName(apiKey, {
-						teamName,
-						title,
-						description,
-						priority,
-						assigneeName: assigneeName || this.props?.name,
-						labelNames,
-						projectName,
-						stateName,
-						dueDate,
-					});
+					const result = await createIssueByName(
+						apiKey,
+						{
+							teamName,
+							title,
+							description,
+							priority,
+							assigneeName: assigneeName || this.props?.name,
+							labelNames,
+							projectName,
+							stateName,
+							dueDate,
+						},
+						{
+							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+						},
+					);
 
 					const cleanedResult = {
 						success: result.success,
@@ -364,17 +501,23 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			}) => {
 				try {
 					const apiKey = await this.getApiKey();
-					const result = await updateIssueByName(apiKey, {
-						identifier,
-						title,
-						description,
-						priority,
-						assigneeName,
-						labelNames,
-						projectName,
-						stateName,
-						dueDate,
-					});
+					const result = await updateIssueByName(
+						apiKey,
+						{
+							identifier,
+							title,
+							description,
+							priority,
+							assigneeName,
+							labelNames,
+							projectName,
+							stateName,
+							dueDate,
+						},
+						{
+							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+						},
+					);
 
 					return {
 						content: [
@@ -400,7 +543,13 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			async ({ identifier, body }) => {
 				try {
 					const apiKey = await this.getApiKey();
-					const result = await createComment(apiKey, { identifier, body });
+					const result = await createComment(
+						apiKey,
+						{ identifier, body },
+						{
+							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+						},
+					);
 					return {
 						content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
 					};
@@ -420,7 +569,13 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			async ({ commentId, body }) => {
 				try {
 					const apiKey = await this.getApiKey();
-					const result = await updateComment(apiKey, { commentId, body });
+					const result = await updateComment(
+						apiKey,
+						{ commentId, body },
+						{
+							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+						},
+					);
 					return {
 						content: [
 							{
@@ -455,10 +610,10 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				try {
 					const apiKey = await this.getApiKey();
 
-					// Resolve projectName to projectId if provided
+					// Resolve projectName to projectId if provided (with caching)
 					let projectId: string | undefined;
 					if (projectName) {
-						const projects = await listProjects(apiKey);
+						const projects = await this.getCachedProjects();
 						const project = projects.find((p) => p.name === projectName);
 						if (!project) {
 							throw new Error(`Project not found: ${projectName}`);
@@ -466,10 +621,10 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						projectId = project.id;
 					}
 
-					// Resolve initiativeName to initiativeId if provided
+					// Resolve initiativeName to initiativeId if provided (with caching)
 					let initiativeId: string | undefined;
 					if (initiativeName) {
-						const initiatives = await listInitiatives(apiKey);
+						const initiatives = await this.getCachedInitiatives();
 						const initiative = initiatives.find(
 							(i) => i.name === initiativeName,
 						);
@@ -488,6 +643,9 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 							includeArchived,
 						},
 						limit,
+						{
+							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+						},
 					);
 					return {
 						content: [{ type: "text", text: JSON.stringify(documents, null, 2) }],
@@ -507,7 +665,9 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			async ({ slugId }) => {
 				try {
 					const apiKey = await this.getApiKey();
-					const document = await getDocument(apiKey, slugId);
+					const document = await getDocument(apiKey, slugId, {
+						onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+					});
 					// Remove internal ID from response
 					const { id, ...documentWithoutId } = document;
 					return {
@@ -530,11 +690,17 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			async ({ title, content, projectName }) => {
 				try {
 					const apiKey = await this.getApiKey();
-					const result = await createDocumentByName(apiKey, {
-						title,
-						content,
-						projectName,
-					});
+					const result = await createDocumentByName(
+						apiKey,
+						{
+							title,
+							content,
+							projectName,
+						},
+						{
+							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+						},
+					);
 
 					const cleanedResult = {
 						success: result.success,
@@ -571,13 +737,19 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			async ({ slugId, title, content, projectName, initiativeName }) => {
 				try {
 					const apiKey = await this.getApiKey();
-					const result = await updateDocumentByName(apiKey, {
-						slugId,
-						title,
-						content,
-						projectName,
-						initiativeName,
-					});
+					const result = await updateDocumentByName(
+						apiKey,
+						{
+							slugId,
+							title,
+							content,
+							projectName,
+							initiativeName,
+						},
+						{
+							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
+						},
+					);
 
 					return {
 						content: [

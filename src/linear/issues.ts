@@ -29,6 +29,13 @@ export interface Issue {
 }
 
 /**
+ * Options for executeQuery
+ */
+interface QueryOptions {
+	onTokenRefreshNeeded?: () => Promise<string>;
+}
+
+/**
  * List issues with optional filtering
  */
 export async function listIssues(
@@ -44,6 +51,7 @@ export async function listIssues(
 		updatedAt?: string;
 	},
 	first = 25,
+	options?: QueryOptions,
 ): Promise<Issue[]> {
 	// Build filter object
 	const filterObj: Record<string, unknown> = {};
@@ -106,7 +114,7 @@ export async function listIssues(
 				dueDate: string | null;
 			}>;
 		};
-	}>(graphqlQuery, { filter: filterObj, first }, apiKey);
+	}>(graphqlQuery, { filter: filterObj, first }, apiKey, options);
 
 	return data.issues.nodes.map((issue) => ({
 		identifier: issue.identifier,
@@ -124,6 +132,7 @@ export async function listIssues(
 export async function getIssue(
 	apiKey: string,
 	identifier: string,
+	options?: QueryOptions,
 ): Promise<Issue> {
 	const query = `
     query GetIssue($id: String!) {
@@ -159,7 +168,7 @@ export async function getIssue(
 			createdAt: string;
 			updatedAt: string;
 		};
-	}>(query, { id: identifier }, apiKey);
+	}>(query, { id: identifier }, apiKey, options);
 
 	return {
 		identifier: data.issue.identifier,
@@ -205,6 +214,7 @@ export interface CreateIssueResult {
 export async function createIssue(
 	apiKey: string,
 	input: CreateIssueInput,
+	options?: QueryOptions,
 ): Promise<CreateIssueResult> {
 	const mutation = `
     mutation CreateIssue($input: IssueCreateInput!) {
@@ -230,7 +240,7 @@ export async function createIssue(
 				url: string;
 			};
 		};
-	}>(mutation, { input }, apiKey);
+	}>(mutation, { input }, apiKey, options);
 
 	return data.issueCreate;
 }
@@ -263,6 +273,7 @@ export interface UpdateIssueResult {
 export async function updateIssue(
 	apiKey: string,
 	input: UpdateIssueInput,
+	options?: QueryOptions,
 ): Promise<UpdateIssueResult> {
 	const mutation = `
     mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) {
@@ -290,7 +301,7 @@ export async function updateIssue(
 				url: string;
 			};
 		};
-	}>(mutation, { id: issueId, input: updateInput }, apiKey);
+	}>(mutation, { id: issueId, input: updateInput }, apiKey, options);
 
 	return data.issueUpdate;
 }
@@ -317,15 +328,16 @@ async function resolveNamesToIds(
 	teamId: string,
 	teamName: string,
 	input: NameResolutionInput,
+	options?: QueryOptions,
 ): Promise<NameResolutionResult> {
 	// Fetch all resources in parallel
 	const [users, states, teamLabels, workspaceLabels, projects] =
 		await Promise.all([
-			input.assigneeName ? listUsers(apiKey) : Promise.resolve([]),
-			input.stateName ? listStates(apiKey, teamId) : Promise.resolve([]),
-			input.labelNames ? listLabels(apiKey, teamId) : Promise.resolve([]),
-			input.labelNames ? listLabels(apiKey) : Promise.resolve([]),
-			input.projectName ? listProjects(apiKey, teamId) : Promise.resolve([]),
+			input.assigneeName ? listUsers(apiKey, options) : Promise.resolve([]),
+			input.stateName ? listStates(apiKey, teamId, options) : Promise.resolve([]),
+			input.labelNames ? listLabels(apiKey, teamId, options) : Promise.resolve([]),
+			input.labelNames ? listLabels(apiKey, undefined, options) : Promise.resolve([]),
+			input.projectName ? listProjects(apiKey, teamId, false, options) : Promise.resolve([]),
 		]);
 
 	const result: NameResolutionResult = {};
@@ -395,16 +407,17 @@ export interface CreateIssueByNameInput {
 export async function createIssueByName(
 	apiKey: string,
 	input: CreateIssueByNameInput,
+	options?: QueryOptions,
 ): Promise<CreateIssueResult> {
 	// 1. Resolve team name to ID
-	const teams = await listTeams(apiKey);
+	const teams = await listTeams(apiKey, options);
 	const team = teams.find((t) => t.name === input.teamName);
 	if (!team) {
 		throw new Error(`Team not found: ${input.teamName}`);
 	}
 
 	// 2. Resolve all names to IDs
-	const resolved = await resolveNamesToIds(apiKey, team.id, team.name, input);
+	const resolved = await resolveNamesToIds(apiKey, team.id, team.name, input, options);
 
 	// 3. Call the ID-based createIssue
 	return createIssue(apiKey, {
@@ -414,7 +427,7 @@ export async function createIssueByName(
 		priority: input.priority,
 		dueDate: input.dueDate,
 		...resolved,
-	});
+	}, options);
 }
 
 /**
@@ -435,10 +448,11 @@ export interface UpdateIssueByNameInput {
 export async function updateIssueByName(
 	apiKey: string,
 	input: UpdateIssueByNameInput,
+	options?: QueryOptions,
 ): Promise<UpdateIssueResult> {
 	// 1. Extract team from identifier (format: TEAM-123) and get issue ID
 	const teamKey = input.identifier.split("-")[0];
-	const teams = await listTeams(apiKey);
+	const teams = await listTeams(apiKey, options);
 	const team = teams.find((t) => t.key === teamKey);
 	if (!team) {
 		throw new Error(`Team not found for identifier: ${input.identifier}`);
@@ -455,10 +469,10 @@ export async function updateIssueByName(
 
 	const issueData = await executeQuery<{
 		issue: { id: string };
-	}>(issueQuery, { id: input.identifier }, apiKey);
+	}>(issueQuery, { id: input.identifier }, apiKey, options);
 
 	// 3. Resolve all names to IDs
-	const resolved = await resolveNamesToIds(apiKey, team.id, team.name, input);
+	const resolved = await resolveNamesToIds(apiKey, team.id, team.name, input, options);
 
 	// 4. Call the ID-based updateIssue
 	return updateIssue(apiKey, {
@@ -468,5 +482,5 @@ export async function updateIssueByName(
 		priority: input.priority,
 		dueDate: input.dueDate,
 		...resolved,
-	});
+	}, options);
 }

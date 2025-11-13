@@ -7,6 +7,13 @@ import { listIssues } from "./issues.js";
 import type { Issue } from "./issues.js";
 
 /**
+ * Options for executeQuery
+ */
+interface QueryOptions {
+	onTokenRefreshNeeded?: () => Promise<string>;
+}
+
+/**
  * Workspace overview type
  */
 export interface WorkspaceOverview {
@@ -32,6 +39,7 @@ export interface WorkspaceOverview {
  */
 export async function getWorkspaceOverview(
 	apiKey: string,
+	options?: QueryOptions,
 ): Promise<WorkspaceOverview> {
 	const query = `
     query GetWorkspaceOverview {
@@ -100,7 +108,7 @@ export async function getWorkspaceOverview(
 				name: string;
 			}>;
 		};
-	}>(query, {}, apiKey);
+	}>(query, {}, apiKey, options);
 
 	// Get active issues using the existing listIssues function
 	const activeIssuesRaw = await listIssues(
@@ -111,6 +119,7 @@ export async function getWorkspaceOverview(
 			includeBacklog: false,
 		},
 		50,
+		options,
 	);
 
 	// Map teams with labels directly from the query result (no N+1)

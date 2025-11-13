@@ -5,6 +5,13 @@
 import { executeQuery } from "./client.js";
 
 /**
+ * Options for executeQuery
+ */
+interface QueryOptions {
+	onTokenRefreshNeeded?: () => Promise<string>;
+}
+
+/**
  * Label type
  */
 export interface Label {
@@ -19,6 +26,7 @@ export interface Label {
 export async function listLabels(
 	apiKey: string,
 	teamId?: string,
+	options?: QueryOptions,
 ): Promise<Label[]> {
 	const query = `
     query ListLabels($filter: IssueLabelFilter) {
@@ -38,6 +46,7 @@ export async function listLabels(
 		query,
 		{ filter },
 		apiKey,
+		options,
 	);
 
 	return data.issueLabels.nodes;
