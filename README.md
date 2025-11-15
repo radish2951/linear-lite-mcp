@@ -83,26 +83,6 @@ Update an existing issue by human-friendly names. Resolves names to IDs internal
 **Returns**:
 - `success`: Boolean indicating if update succeeded
 
-### `comment_create`
-Create a comment on an issue.
-
-**Parameters**:
-- `identifier` (required): Issue identifier (e.g., "JHS-1")
-- `body` (required): Comment body in markdown
-
-**Returns**:
-- `success`: Boolean indicating if creation succeeded
-
-### `comment_update`
-Update an existing comment.
-
-**Parameters**:
-- `commentId` (required): Comment ID
-- `body` (required): New comment body in markdown
-
-**Returns**:
-- `success`: Boolean indicating if update succeeded
-
 ### `documents_list`
 List documents with minimal payload. Returns only essential fields:
 - `title`, `slugId`
@@ -398,7 +378,6 @@ Result: **~70% smaller payloads** for list operations.
 ## Future Enhancements
 
 - [x] Issue updates
-- [x] Comment management
 - [x] Document management (list, get, create, update)
 - [ ] Project and Initiative search
 - [ ] Webhook support for real-time updates

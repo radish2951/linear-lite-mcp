@@ -44,20 +44,6 @@ export type { Project } from "./projects.js";
 export { listInitiatives } from "./initiatives.js";
 export type { Initiative } from "./initiatives.js";
 
-// Comments
-export {
-	getIssueComments,
-	createComment,
-	updateComment,
-} from "./comments.js";
-export type {
-	Comment,
-	CreateCommentInput,
-	CreateCommentResult,
-	UpdateCommentInput,
-	UpdateCommentResult,
-} from "./comments.js";
-
 // Documents
 export {
 	listDocuments,

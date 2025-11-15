@@ -20,8 +20,6 @@ import {
 	createIssueByName,
 	updateIssueByName,
 	getWorkspaceOverview,
-	createComment,
-	updateComment,
 	listDocuments,
 	getDocument,
 	createDocumentByName,
@@ -543,63 +541,6 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						},
 					);
 
-					return {
-						content: [
-							{
-								type: "text",
-								text: JSON.stringify({ success: result.success }, null, 2),
-							},
-						],
-					};
-				} catch (error) {
-					return this.handleError(error);
-				}
-			},
-		);
-
-		// Create comment on issue
-		this.server.tool(
-			"comment_create",
-			{
-				identifier: z.string(),
-				body: z.string(),
-			},
-			async ({ identifier, body }) => {
-				try {
-					const apiKey = await this.getApiKey();
-					const result = await createComment(
-						apiKey,
-						{ identifier, body },
-						{
-							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
-						},
-					);
-					return {
-						content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-					};
-				} catch (error) {
-					return this.handleError(error);
-				}
-			},
-		);
-
-		// Update comment
-		this.server.tool(
-			"comment_update",
-			{
-				commentId: z.string(),
-				body: z.string(),
-			},
-			async ({ commentId, body }) => {
-				try {
-					const apiKey = await this.getApiKey();
-					const result = await updateComment(
-						apiKey,
-						{ commentId, body },
-						{
-							onTokenRefreshNeeded: () => this.refreshAndGetApiKey(),
-						},
-					);
 					return {
 						content: [
 							{
