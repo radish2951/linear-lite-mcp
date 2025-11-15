@@ -95,7 +95,7 @@ async function redirectToLinear(
 	authorizeUrl.searchParams.set("client_id", env.LINEAR_OAUTH_CLIENT_ID);
 	authorizeUrl.searchParams.set("redirect_uri", callbackUrl);
 	authorizeUrl.searchParams.set("response_type", "code");
-	authorizeUrl.searchParams.set("scope", "read,write");
+	authorizeUrl.searchParams.set("scope", "read,write,offline");
 	authorizeUrl.searchParams.set("state", signedState);
 
 	responseHeaders.set("location", authorizeUrl.toString());
@@ -183,6 +183,13 @@ app.get("/callback", async (c) => {
 	const accessToken = tokenData.access_token;
 	const refreshToken = tokenData.refresh_token;
 	const expiresIn = tokenData.expires_in;
+
+	// Warn if refresh token is missing (should not happen with offline scope)
+	if (!refreshToken) {
+		console.warn(
+			"Warning: Linear OAuth did not return a refresh token. Token refresh will not work. Ensure 'offline' scope is included in the authorization request.",
+		);
+	}
 
 	// Fetch user info from Linear
 	const userResponse = await fetch("https://api.linear.app/graphql", {
