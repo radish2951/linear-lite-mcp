@@ -26,7 +26,7 @@ List issues with minimal payload. Returns only essential fields:
 - `teamName` (optional): Filter by team name (resolved to ID server-side)
 - `assigneeName` (optional): Filter by assignee name (resolved to ID server-side)
 - `state` (optional): Filter by state name
-- `priority` (optional): Filter by priority (0-4)
+- `priority` (optional): Filter by priority (0: No Priority, 1: Urgent, 2: High, 3: Medium, 4: Low)
 - `limit` (optional): Number of results (1-100, default: 25)
 - `includeCompleted` (optional): Include completed/canceled issues (default: false)
 - `includeBacklog` (optional): Include backlog issues (default: false)
@@ -57,7 +57,7 @@ Create a new issue by human-friendly names. Resolves names to IDs internally bef
 - `teamName` (required): Team to create the issue in
 - `title` (required): Issue title
 - `description` (optional): Issue description
-- `priority` (optional): Priority (0-4)
+- `priority` (optional): Issue priority (0: No Priority, 1: Urgent, 2: High, 3: Medium, 4: Low)
 - `assigneeName` (optional): Assign by user display name
 - `labelNames` (optional): Array of label names (team or workspace labels)
 - `projectName` (optional): Associate with a project
@@ -74,7 +74,7 @@ Update an existing issue by human-friendly names. Resolves names to IDs internal
 - `identifier` (required): Issue identifier (e.g., "JHS-1")
 - `title` (optional): New title
 - `description` (optional): New description
-- `priority` (optional): New priority (0-4)
+- `priority` (optional): New priority (0: No Priority, 1: Urgent, 2: High, 3: Medium, 4: Low)
 - `assigneeName` (optional): Reassign by user display name
 - `labelNames` (optional): Replace labels with new array of label names
 - `projectName` (optional): Move to a different project

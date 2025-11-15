@@ -16,6 +16,10 @@ export interface Issue {
 	identifier?: string;
 	title?: string;
 	state?: string;
+	/**
+	 * Issue priority level
+	 * @description 0: No Priority, 1: Urgent, 2: High, 3: Medium, 4: Low
+	 */
 	priority?: number;
 	projectName?: string | null;
 	dueDate?: string | null;

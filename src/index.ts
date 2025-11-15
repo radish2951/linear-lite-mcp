@@ -289,7 +289,15 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				teamName: z.string().optional(),
 				assigneeName: z.string().optional(),
 				state: z.string().optional(),
-				priority: z.number().int().min(0).max(4).optional(),
+				priority: z
+					.number()
+					.int()
+					.min(0)
+					.max(4)
+					.optional()
+					.describe(
+						"Filter by priority (0: No Priority, 1: Urgent, 2: High, 3: Medium, 4: Low)",
+					),
 				limit: z.number().min(1).max(100).default(25),
 				includeCompleted: z.boolean().default(false),
 				includeBacklog: z.boolean().default(false),
@@ -416,7 +424,15 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				teamName: z.string(),
 				title: z.string(),
 				description: z.string().optional(),
-				priority: z.number().int().min(0).max(4).optional(),
+				priority: z
+					.number()
+					.int()
+					.min(0)
+					.max(4)
+					.optional()
+					.describe(
+						"Issue priority (0: No Priority, 1: Urgent, 2: High, 3: Medium, 4: Low)",
+					),
 				assigneeName: z.string().optional(),
 				labelNames: z.array(z.string()).optional(),
 				projectName: z.string().optional(),
@@ -481,7 +497,15 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				identifier: z.string(),
 				title: z.string().optional(),
 				description: z.string().optional(),
-				priority: z.number().int().min(0).max(4).optional(),
+				priority: z
+					.number()
+					.int()
+					.min(0)
+					.max(4)
+					.optional()
+					.describe(
+						"New priority (0: No Priority, 1: Urgent, 2: High, 3: Medium, 4: Low)",
+					),
 				assigneeName: z.string().optional(),
 				labelNames: z.array(z.string()).optional(),
 				projectName: z.string().optional(),
