@@ -95,7 +95,7 @@ async function redirectToLinear(
 	authorizeUrl.searchParams.set("client_id", env.LINEAR_OAUTH_CLIENT_ID);
 	authorizeUrl.searchParams.set("redirect_uri", callbackUrl);
 	authorizeUrl.searchParams.set("response_type", "code");
-	authorizeUrl.searchParams.set("scope", "read,write,offline");
+	authorizeUrl.searchParams.set("scope", "read,write");
 	authorizeUrl.searchParams.set("state", signedState);
 
 	responseHeaders.set("location", authorizeUrl.toString());
