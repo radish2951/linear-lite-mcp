@@ -31,6 +31,10 @@
 		{
 			"binding": "OAUTH_KV",
 			"id": "878e9dee88144028a3fef91cc375f4ad"
+		},
+		{
+			"binding": "LINEAR_TOKENS_KV",
+			"id": "25b0dcf300734df9bb820717443c751f"
 		}
 	],
 	"observability": {

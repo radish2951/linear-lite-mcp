@@ -8,6 +8,7 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		OAUTH_KV: KVNamespace;
+		LINEAR_TOKENS_KV: KVNamespace;
 		GEMINI_API_KEY: string;
 		LINEAR_OAUTH_CLIENT_ID: string;
 		LINEAR_OAUTH_CLIENT_SECRET: string;

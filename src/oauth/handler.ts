@@ -184,10 +184,10 @@ app.get("/callback", async (c) => {
 	const refreshToken = tokenData.refresh_token;
 	const expiresIn = tokenData.expires_in;
 
-	// Warn if refresh token is missing (should not happen with offline scope)
+	// Check if refresh token is missing
 	if (!refreshToken) {
-		console.warn(
-			"Warning: Linear OAuth did not return a refresh token. Token refresh will not work. Ensure 'offline' scope is included in the authorization request.",
+		console.error(
+			"Error: Linear OAuth did not return a refresh token. Re-authentication will be required when the access token expires.",
 		);
 	}
 
@@ -225,6 +225,17 @@ app.get("/callback", async (c) => {
 		? Date.now() + expiresIn * 1000
 		: Date.now() + 23 * 60 * 60 * 1000;
 
+	// Store Linear tokens in dedicated KV (persists across sessions)
+	const kvKey = `linear_tokens:${userId}`;
+	await c.env.LINEAR_TOKENS_KV.put(
+		kvKey,
+		JSON.stringify({
+			accessToken,
+			refreshToken,
+			expiresAt,
+		}),
+	);
+
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
 		metadata: {
 			label: name,
@@ -233,9 +244,6 @@ app.get("/callback", async (c) => {
 			userId,
 			name,
 			email,
-			accessToken,
-			refreshToken,
-			expiresAt,
 		},
 		request: parsedState.oauthReqInfo,
 		scope: parsedState.oauthReqInfo.scope,

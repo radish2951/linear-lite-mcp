@@ -10,9 +10,12 @@ type Props = {
 	userId: string;
 	name: string;
 	email: string;
+};
+
+type LinearTokens = {
 	accessToken: string;
 	refreshToken?: string;
-	expiresAt?: number; // Optional for backward compatibility with legacy sessions
+	expiresAt?: number;
 };
 import {
 	listIssues,
@@ -47,6 +50,32 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	// Track current user to detect switches
 	private currentUserId: string | null = null;
 
+	// Linear tokens storage (KV-based, persists across sessions)
+	private async getLinearTokens(): Promise<LinearTokens | null> {
+		if (!this.props?.userId) {
+			return null;
+		}
+		const key = `linear_tokens:${this.props.userId}`;
+		const tokensJson = await this.env.LINEAR_TOKENS_KV.get(key);
+		if (!tokensJson) {
+			return null;
+		}
+		try {
+			return JSON.parse(tokensJson) as LinearTokens;
+		} catch (error) {
+			console.error("Failed to parse tokens from KV:", error);
+			return null;
+		}
+	}
+
+	private async setLinearTokens(tokens: LinearTokens): Promise<void> {
+		if (!this.props?.userId) {
+			throw new Error("Cannot save tokens: userId not available");
+		}
+		const key = `linear_tokens:${this.props.userId}`;
+		await this.env.LINEAR_TOKENS_KV.put(key, JSON.stringify(tokens));
+	}
+
 	private async getApiKey(): Promise<string> {
 		if (!this.props) {
 			throw new Error(
@@ -61,16 +90,26 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		}
 		this.currentUserId = this.props.userId;
 
+		// Get Linear tokens from storage
+		const tokens = await this.getLinearTokens();
+		if (!tokens?.accessToken) {
+			throw new Error(
+				"No Linear access token found. Please authenticate with Linear.",
+			);
+		}
+
 		// Handle legacy sessions without expiresAt
-		if (!this.props.expiresAt) {
-			if (this.props.refreshToken) {
+		if (!tokens.expiresAt) {
+			if (tokens.refreshToken) {
 				// Force refresh to get a proper expiresAt
 				console.log("Legacy session detected, forcing token refresh...");
 				await this.refreshAccessToken();
+				const refreshedTokens = await this.getLinearTokens();
+				return refreshedTokens?.accessToken || tokens.accessToken;
 			} else {
 				// API key mode - set a far future expiration
-				await this.updateProps({
-					...this.props,
+				await this.setLinearTokens({
+					...tokens,
 					expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
 				});
 			}
@@ -80,10 +119,12 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		const now = Date.now();
 		const fiveMinutes = 5 * 60 * 1000;
 
-		if (this.props.expiresAt && now >= this.props.expiresAt - fiveMinutes) {
+		if (tokens.expiresAt && now >= tokens.expiresAt - fiveMinutes) {
 			// Token expired or about to expire, try to refresh
-			if (this.props.refreshToken) {
+			if (tokens.refreshToken) {
 				await this.refreshAccessToken();
+				const refreshedTokens = await this.getLinearTokens();
+				return refreshedTokens?.accessToken || tokens.accessToken;
 			} else {
 				throw new Error(
 					"Access token has expired and no refresh token is available. Please re-authenticate with Linear.",
@@ -91,7 +132,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			}
 		}
 
-		return this.props.accessToken;
+		return tokens.accessToken;
 	}
 
 	/**
@@ -99,11 +140,16 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	 * Used as callback for executeQuery
 	 */
 	private async refreshAndGetApiKey(): Promise<string> {
-		if (!this.props?.refreshToken) {
+		const tokens = await this.getLinearTokens();
+		if (!tokens?.refreshToken) {
 			throw new Error("No refresh token available for authentication retry");
 		}
 		await this.refreshAccessToken();
-		return this.props.accessToken;
+		const refreshedTokens = await this.getLinearTokens();
+		if (!refreshedTokens?.accessToken) {
+			throw new Error("Failed to get access token after refresh");
+		}
+		return refreshedTokens.accessToken;
 	}
 
 	/**
@@ -182,7 +228,8 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 	}
 
 	private async performRefresh(): Promise<void> {
-		if (!this.props?.refreshToken) {
+		const tokens = await this.getLinearTokens();
+		if (!tokens?.refreshToken) {
 			throw new Error("No refresh token available");
 		}
 
@@ -194,7 +241,7 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				},
 				body: new URLSearchParams({
 					grant_type: "refresh_token",
-					refresh_token: this.props.refreshToken,
+					refresh_token: tokens.refreshToken,
 					client_id: this.env.LINEAR_OAUTH_CLIENT_ID,
 					client_secret: this.env.LINEAR_OAUTH_CLIENT_SECRET,
 				}),
@@ -215,21 +262,20 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				token_type: string;
 			}>();
 
-			// Update props with new tokens
+			// Update tokens in storage (NOT in props)
 			// If Linear doesn't provide expires_in, use 23 hours as conservative default
 			const expiresAt = tokenData.expires_in
 				? Date.now() + tokenData.expires_in * 1000
 				: Date.now() + 23 * 60 * 60 * 1000;
 
-			const updatedProps = {
-				...this.props,
+			const updatedTokens: LinearTokens = {
 				accessToken: tokenData.access_token,
-				refreshToken: tokenData.refresh_token || this.props.refreshToken,
+				refreshToken: tokenData.refresh_token || tokens.refreshToken,
 				expiresAt,
 			};
 
-			// Persist the updated tokens
-			await this.updateProps(updatedProps);
+			// Persist the updated tokens directly to storage
+			await this.setLinearTokens(updatedTokens);
 
 			console.log("Access token refreshed successfully");
 		} catch (error) {
@@ -263,12 +309,25 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 				? authHeader.substring(7)
 				: authHeader;
 
-			// Set and persist props with the API key (bypass OAuth)
-			// API keys don't expire, so set a far future expiration
+			// Generate unique userId from API key hash
+			// This ensures different API keys get separate KV storage
+			const encoder = new TextEncoder();
+			const data = encoder.encode(apiKey);
+			const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+			const hashArray = Array.from(new Uint8Array(hashBuffer));
+			const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+			const apiKeyUserId = `apikey-${hashHex.substring(0, 16)}`;
+
+			// Set props (user info only)
 			await this.updateProps({
-				userId: "api-key-user",
+				userId: apiKeyUserId,
 				name: "API Key User",
 				email: "",
+			});
+
+			// Store API key in Linear tokens storage
+			// API keys don't expire, so set a far future expiration
+			await this.setLinearTokens({
 				accessToken: apiKey,
 				expiresAt: Date.now() + 365 * 24 * 60 * 60 * 1000, // 1 year
 			});
