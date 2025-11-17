@@ -5,6 +5,7 @@ import { z } from "zod";
 import { LinearOAuthHandler } from "./oauth/handler.js";
 import type { Connection, ConnectionContext } from "agents";
 import { LinearCache } from "./linear/cache.js";
+import { encrypt, decrypt } from "./crypto.js";
 
 type Props = {
 	userId: string;
@@ -56,14 +57,16 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			return null;
 		}
 		const key = `linear_tokens:${this.props.userId}`;
-		const tokensJson = await this.env.LINEAR_TOKENS_KV.get(key);
-		if (!tokensJson) {
+		const encryptedData = await this.env.LINEAR_TOKENS_KV.get(key);
+		if (!encryptedData) {
 			return null;
 		}
 		try {
-			return JSON.parse(tokensJson) as LinearTokens;
+			// Decrypt and parse
+			const decrypted = await decrypt(encryptedData, this.env.COOKIE_ENCRYPTION_KEY);
+			return JSON.parse(decrypted) as LinearTokens;
 		} catch (error) {
-			console.error("Failed to parse tokens from KV:", error);
+			console.error("Failed to decrypt/parse tokens from KV:", error);
 			return null;
 		}
 	}
@@ -73,7 +76,10 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			throw new Error("Cannot save tokens: userId not available");
 		}
 		const key = `linear_tokens:${this.props.userId}`;
-		await this.env.LINEAR_TOKENS_KV.put(key, JSON.stringify(tokens));
+		// Encrypt before storing
+		const tokensJson = JSON.stringify(tokens);
+		const encrypted = await encrypt(tokensJson, this.env.COOKIE_ENCRYPTION_KEY);
+		await this.env.LINEAR_TOKENS_KV.put(key, encrypted);
 	}
 
 	private async getApiKey(): Promise<string> {

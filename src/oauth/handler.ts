@@ -11,6 +11,7 @@ import {
 	parseSignedState,
 	renderApprovalDialog,
 } from "./utils.js";
+import { encrypt } from "../crypto.js";
 
 const app = new Hono<{ Bindings: Env & { OAUTH_PROVIDER: OAuthHelpers } }>();
 
@@ -226,15 +227,15 @@ app.get("/callback", async (c) => {
 		: Date.now() + 23 * 60 * 60 * 1000;
 
 	// Store Linear tokens in dedicated KV (persists across sessions)
+	// Encrypt before storing
 	const kvKey = `linear_tokens:${userId}`;
-	await c.env.LINEAR_TOKENS_KV.put(
-		kvKey,
-		JSON.stringify({
-			accessToken,
-			refreshToken,
-			expiresAt,
-		}),
-	);
+	const tokensJson = JSON.stringify({
+		accessToken,
+		refreshToken,
+		expiresAt,
+	});
+	const encrypted = await encrypt(tokensJson, c.env.COOKIE_ENCRYPTION_KEY);
+	await c.env.LINEAR_TOKENS_KV.put(kvKey, encrypted);
 
 	const { redirectTo } = await c.env.OAUTH_PROVIDER.completeAuthorization({
 		metadata: {
