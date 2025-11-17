@@ -25,7 +25,6 @@ export interface WorkspaceOverview {
 		labels: string[];
 		projects: string[];
 	}>;
-	workspaceLabels: string[];
 	initiatives: string[];
 	users: Array<{
 		id: string;
@@ -66,11 +65,6 @@ export async function getWorkspaceOverview(
           }
         }
       }
-      issueLabels(filter: { team: { null: true } }) {
-        nodes {
-          name
-        }
-      }
       initiatives {
         nodes {
           name
@@ -95,9 +89,6 @@ export async function getWorkspaceOverview(
 				labels: { nodes: Array<{ name: string }> };
 				projects: { nodes: Array<{ name: string; state: string }> };
 			}>;
-		};
-		issueLabels: {
-			nodes: Array<{ name: string }>;
 		};
 		initiatives: {
 			nodes: Array<{ name: string }>;
@@ -136,7 +127,6 @@ export async function getWorkspaceOverview(
 
 	return {
 		teams: teamsWithLabels,
-		workspaceLabels: data.issueLabels.nodes.map((l) => l.name),
 		initiatives: data.initiatives.nodes.map((i) => i.name),
 		users: data.users.nodes,
 		activeIssues: activeIssuesRaw,

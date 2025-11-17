@@ -476,7 +476,6 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 						const { id, ...rest } = team;
 						return rest;
 					}),
-					workspaceLabels: overview.workspaceLabels,
 					initiatives: overview.initiatives,
 					users: overview.users.map((user: { id: string; name: string }) => {
 						const { id, ...rest } = user;
