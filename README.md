@@ -153,12 +153,15 @@ pnpm install
 
 ### 3. Configure Secrets and Environment Variables
 
+#### Required Secrets
+
 ```bash
 # For local development (.dev.vars)
 cat > .dev.vars << EOF
 LINEAR_OAUTH_CLIENT_ID=your_linear_oauth_client_id
 LINEAR_OAUTH_CLIENT_SECRET=your_linear_oauth_client_secret
 COOKIE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+MCP_API_KEY_SECRET=$(openssl rand -base64 32)
 PUBLIC_BASE_URL=http://localhost:8787
 EOF
 
@@ -166,9 +169,15 @@ EOF
 wrangler secret put LINEAR_OAUTH_CLIENT_ID
 wrangler secret put LINEAR_OAUTH_CLIENT_SECRET
 wrangler secret put COOKIE_ENCRYPTION_KEY
+wrangler secret put MCP_API_KEY_SECRET
 # Also set PUBLIC_BASE_URL as an environment variable (not a secret)
 # via the Cloudflare dashboard or wrangler.jsonc
 ```
+
+**Secret Descriptions**:
+- `LINEAR_OAUTH_CLIENT_ID` / `LINEAR_OAUTH_CLIENT_SECRET`: OAuth credentials from Linear
+- `COOKIE_ENCRYPTION_KEY`: Used to encrypt session cookies and Linear tokens in KV storage (generate with `openssl rand -base64 32`)
+- `MCP_API_KEY_SECRET`: Required for `/mcp-no-oauth` endpoint security (generate with `openssl rand -base64 32`)
 
 **Important**: Each user will authenticate with their own Linear account via OAuth. The server does not use a shared API key.
 
