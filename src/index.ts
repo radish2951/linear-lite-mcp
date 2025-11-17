@@ -304,6 +304,19 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 		const authHeader = ctx.request.headers.get("Authorization");
 
 		if (url.pathname === MCP_NO_OAUTH_PATH && authHeader) {
+			// Require MCP_API_KEY_SECRET for security
+			const mcpSecret = ctx.request.headers.get("X-MCP-Secret");
+			if (!this.env.MCP_API_KEY_SECRET) {
+				throw new Error(
+					"MCP_API_KEY_SECRET is not configured. API key mode is disabled.",
+				);
+			}
+			if (!mcpSecret || mcpSecret !== this.env.MCP_API_KEY_SECRET) {
+				throw new Error(
+					"Invalid or missing X-MCP-Secret header. Unauthorized access.",
+				);
+			}
+
 			// Bearer プレフィックスがあれば除去、なければそのまま使う
 			const apiKey = authHeader.startsWith("Bearer ")
 				? authHeader.substring(7)
@@ -315,7 +328,9 @@ export class LinearLiteMCP extends McpAgent<Env, Record<string, never>, Props> {
 			const data = encoder.encode(apiKey);
 			const hashBuffer = await crypto.subtle.digest("SHA-256", data);
 			const hashArray = Array.from(new Uint8Array(hashBuffer));
-			const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+			const hashHex = hashArray
+				.map((b) => b.toString(16).padStart(2, "0"))
+				.join("");
 			const apiKeyUserId = `apikey-${hashHex.substring(0, 16)}`;
 
 			// Set props (user info only)

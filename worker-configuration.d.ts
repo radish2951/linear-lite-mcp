@@ -13,6 +13,7 @@ declare namespace Cloudflare {
 		LINEAR_OAUTH_CLIENT_ID: string;
 		LINEAR_OAUTH_CLIENT_SECRET: string;
 		COOKIE_ENCRYPTION_KEY: string;
+		MCP_API_KEY_SECRET?: string;
 		PUBLIC_BASE_URL?: string;
 		ALLOWED_CALLBACK_HOSTS?: string;
 		MCP_OBJECT: DurableObjectNamespace<import("./src/index").LinearLiteMCP>;
